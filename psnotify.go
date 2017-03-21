@@ -18,8 +18,7 @@ type Host struct {
 
 type Tunnels struct {
     index int
-    list []Host
-    pids map[int32]int
+    list map[int32]Host
 }
 
 var tunnels Tunnels
@@ -37,11 +36,10 @@ func AddConnection(ev * psnotify.ProcEventFork) {
             conns, _ := netutil.ConnectionsPid("inet", ppid)
             for conn := range conns {
                 if conns[conn].Family == 2 && conns[conn].Status == "LISTEN" {
-                    tunnels.list = append(tunnels.list, Host{conns[conn].Laddr.Port,
-                                              conns[conn].Raddr.IP, 
-                                              conns[conn].Raddr.Port})
-                    tunnels.pids[conns[conn].Pid] = len(tunnels.list) - 1
-                    fmt.Println(tunnels.list[len(tunnels.list) - 1])                    
+                    tunnels.list[conns[conn].Pid] = Host{conns[conn].Laddr.Port,
+                                                         conns[conn].Raddr.IP, 
+                                                         conns[conn].Raddr.Port}
+                    fmt.Println(tunnels.list[conns[conn].Pid])
                 }
             }
             
@@ -70,10 +68,12 @@ func remove(slice []Host, s int) []Host {
 }
 
 func RemoveConnection(ev * psnotify.ProcEventExit) {
-    idx, ok := tunnels.pids[int32(ev.Pid)]
+    idx := int32(ev.Pid)
+    _, ok := tunnels.list[idx]
     if ok {
         fmt.Println("Deleting", tunnels.list[idx])
-        tunnels.list = remove(tunnels.list, idx)
+        delete(tunnels.list, idx)
+        fmt.Println(tunnels)
     }
 }
 
@@ -106,9 +106,8 @@ func watchSSH(pid int) {
 
 func main() {
 
-    tunnels.list = make([]Host, 1)
+    tunnels.list = make(map[int32]Host, 1)
     tunnels.index = -1
-    tunnels.pids = make(map[int32]int)
     
     pids, _ := ps.Pids()
     for pid := range pids  {
