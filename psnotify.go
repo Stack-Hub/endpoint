@@ -2,7 +2,11 @@ package main
 
 import (
     "fmt"
+    "log"
     "regexp"
+    "container/list"
+    "strconv"
+    "encoding/json"
     
     "github.com/mindreframer/golang-stuff/github.com/jondot/gosigar/psnotify"
     netutil "github.com/shirou/gopsutil/net"
@@ -14,11 +18,18 @@ type Host struct {
     localPort  uint32
     remoteIP   string
     remotePort uint32
+    element  * list.Element
 }
 
 type Tunnels struct {
-    index int
-    list map[int32]Host
+    idx   * list.Element
+    hosts map[int32]*Host
+    list  * list.List
+}
+
+type Config struct {
+    Port uint32 `json:"port"`
+    Mode string `json:"mode"`
 }
 
 var tunnels Tunnels
@@ -34,13 +45,25 @@ func AddConnection(ev * psnotify.ProcEventFork) {
         if matched {
             fmt.Println(cmdline)
             conns, _ := netutil.ConnectionsPid("inet", ppid)
+
+            //Declare host to store connection information
+            var host Host
+            
             for conn := range conns {
                 if conns[conn].Family == 2 && conns[conn].Status == "LISTEN" {
-                    tunnels.list[conns[conn].Pid] = Host{conns[conn].Laddr.Port,
-                                                         conns[conn].Raddr.IP, 
-                                                         conns[conn].Raddr.Port}
-                    fmt.Println(tunnels.list[conns[conn].Pid])
+                    e := tunnels.list.PushBack(conns[conn].Pid)
+                    
+                    host.localPort = conns[conn].Laddr.Port
+                    host.element = e
+                    
+                    tunnels.hosts[conns[conn].Pid] = &host                    
+                    log.Println(host)
                 }
+                
+                if conns[conn].Family == 2 && conns[conn].Status == "ESTABLISHED" {
+                    host.remoteIP = conns[conn].Raddr.IP
+                }
+                
             }
             
             watcher, err := psnotify.NewWatcher()
@@ -57,8 +80,18 @@ func AddConnection(ev * psnotify.ProcEventFork) {
             if (int32(execev.Pid) == cpid) {
                 childproc, _ := ps.NewProcess(cpid)
                 childcmdline, _ := childproc.CmdlineSlice()
-                fmt.Println(childcmdline)                            
+                configstr := childcmdline[len(childcmdline) - 1]
+                config := Config{}
+                json.Unmarshal([]byte(configstr), &config)
+                fmt.Println(config)
+                host.remotePort = config.Port
             }
+
+            fmt.Printf("Host %s:%d Connected on Port %d\n", 
+                       host.remoteIP, 
+                       host.remotePort, 
+                       host.localPort)
+            
         }
     }
 }
@@ -68,12 +101,30 @@ func remove(slice []Host, s int) []Host {
 }
 
 func RemoveConnection(ev * psnotify.ProcEventExit) {
-    idx := int32(ev.Pid)
-    _, ok := tunnels.list[idx]
+    pid := int32(ev.Pid)
+    host, ok := tunnels.hosts[pid]
     if ok {
-        fmt.Println("Deleting", tunnels.list[idx])
-        delete(tunnels.list, idx)
+        log.Println("Deleting", tunnels.hosts[pid])
+
+        //If tunnel index points to current index, then move the index forward.
+        if tunnels.idx == host.element {
+            tunnels.idx = tunnels.idx.Next()
+        }   
+    
+        //Remove index from the list
+        tunnels.list.Remove(host.element)
+
+        //Delete host entry from map
+        delete(tunnels.hosts, pid)
+
         fmt.Println(tunnels)
+        pidlist := ""
+        for e := tunnels.list.Front(); e != nil; e = e.Next() {
+            pidlist += strconv.Itoa(int(e.Value.(int32))) + " "
+        }        
+        if len(pidlist) > 0 {
+            log.Println("list>", pidlist)
+        }
     }
 }
 
@@ -104,11 +155,33 @@ func watchSSH(pid int) {
     }
 }
 
+func Next() *Host {
+    if len(tunnels.hosts) == 0 {
+        return nil
+    }
+    
+    if tunnels.idx == nil {
+        tunnels.idx = tunnels.list.Front()
+    }
+        
+    host := tunnels.hosts[tunnels.idx.Value.(int32)]
+    
+    if tunnels.idx.Next() == nil {
+        tunnels.idx = tunnels.list.Front()
+    } else {
+        tunnels.idx = tunnels.idx.Next()
+    }
+    
+    return host
+}
+
 func main() {
 
-    tunnels.list = make(map[int32]Host, 1)
-    tunnels.index = -1
-    
+    tunnels.hosts = make(map[int32]*Host, 1)
+    tunnels.idx = nil
+    tunnels.list = list.New()
+    tunnels.list.Init()
+
     pids, _ := ps.Pids()
     for pid := range pids  {
         proc, _ := ps.NewProcess(pids[pid])
@@ -122,7 +195,15 @@ func main() {
         }
     }
     
-    var num int
-    /* ... do stuff ... */
-    fmt.Scanf("%d", &num)
+    num := 0
+    
+    for num != 10 {
+        /* ... do stuff ... */
+        fmt.Scanf("%d", &num)
+        
+        if num == 1 {
+            fmt.Println(Next())
+        }
+        
+    }
 }
