@@ -10,7 +10,21 @@ import (
 
 )
 
-func connections(ev * psnotify.ProcEventFork) {
+type Host struct {
+    localPort  uint32
+    remoteIP   string
+    remotePort uint32
+}
+
+type Tunnels struct {
+    index int
+    list []Host
+    pids map[int32]int
+}
+
+var tunnels Tunnels
+
+func AddConnection(ev * psnotify.ProcEventFork) {
     ppid := int32(ev.ParentPid)
     cpid := int32(ev.ChildPid)
     proc, _ := ps.NewProcess(ppid)
@@ -22,7 +36,13 @@ func connections(ev * psnotify.ProcEventFork) {
             fmt.Println(cmdline)
             conns, _ := netutil.ConnectionsPid("inet", ppid)
             for conn := range conns {
-                fmt.Println(conns[conn])
+                if conns[conn].Family == 2 && conns[conn].Status == "LISTEN" {
+                    tunnels.list = append(tunnels.list, Host{conns[conn].Laddr.Port,
+                                              conns[conn].Raddr.IP, 
+                                              conns[conn].Raddr.Port})
+                    tunnels.pids[conns[conn].Pid] = len(tunnels.list) - 1
+                    fmt.Println(tunnels.list[len(tunnels.list) - 1])                    
+                }
             }
             
             watcher, err := psnotify.NewWatcher()
@@ -45,6 +65,18 @@ func connections(ev * psnotify.ProcEventFork) {
     }
 }
 
+func remove(slice []Host, s int) []Host {
+    return append(slice[:s], slice[s+1:]...)
+}
+
+func RemoveConnection(ev * psnotify.ProcEventExit) {
+    idx, ok := tunnels.pids[int32(ev.Pid)]
+    if ok {
+        fmt.Println("Deleting", tunnels.list[idx])
+        tunnels.list = remove(tunnels.list, idx)
+    }
+}
+
 func watchSSH(pid int) {
     watcher, err := psnotify.NewWatcher()
     if err != nil {
@@ -56,9 +88,11 @@ func watchSSH(pid int) {
         for {
             select {
             case ev := <-watcher.Fork:
-                connections(ev)
+                AddConnection(ev)
             case <-watcher.Exec:
-            case <-watcher.Exit:
+            case ev := <-watcher.Exit:
+                RemoveConnection(ev)
+
             case <-watcher.Error:
             }
         }
@@ -72,15 +106,20 @@ func watchSSH(pid int) {
 
 func main() {
 
+    tunnels.list = make([]Host, 1)
+    tunnels.index = -1
+    tunnels.pids = make(map[int32]int)
+    
     pids, _ := ps.Pids()
     for pid := range pids  {
-        fmt.Printf("Checking %d", pid)
-        proc, _ := ps.NewProcess(int32(pid))
+        proc, _ := ps.NewProcess(pids[pid])
         cmdline, _ := proc.CmdlineSlice()
-        matched, _ := regexp.MatchString("*/sshd", cmdline[0])
-        if matched {    
-            fmt.Printf("Watching %d", pid)
-            watchSSH(pid)
+        if len(cmdline) > 0 {
+            matched, _ := regexp.MatchString(`/usr/sbin/sshd`, cmdline[0])
+            if matched {    
+                fmt.Printf("Watching %d\n", pids[pid])
+                watchSSH(int(pids[pid]))
+            }            
         }
     }
     
