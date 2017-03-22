@@ -1,11 +1,9 @@
-package main
+package connmonitor
 
 import (
     "fmt"
     "log"
     "regexp"
-    "container/list"
-    "strconv"
     "encoding/json"
     
     "github.com/mindreframer/golang-stuff/github.com/jondot/gosigar/psnotify"
@@ -20,25 +18,22 @@ type Config struct {
 }
 
 type Host struct {
-    localPort  int32
-    remoteIP   string
-    remotePort int32
-    config     Config
-    element  * list.Element
+    LocalPort  int32
+    RemoteIP   string
+    RemotePort int32
+    Config     Config
 }
 
-type Tunnels struct {
-    idx   * list.Element
-    hosts map[int32]*Host
-    list  * list.List
-}
+var connections map[int32]*Host
 
-
-var tunnels Tunnels
+type ConnAddedEvent   func(p int32, h Host)
+type ConnRemovedEvent func(p int32)
  
-func AddConnection(ev * psnotify.ProcEventFork) {
+func AddConnection(ev * psnotify.ProcEventFork, a ConnAddedEvent) {
     ppid := int32(ev.ParentPid)
     cpid := int32(ev.ChildPid)
+    var pid int32
+    
     proc, _ := ps.NewProcess(ppid)
     cmdline, _ := proc.CmdlineSlice()
 
@@ -53,17 +48,14 @@ func AddConnection(ev * psnotify.ProcEventFork) {
             
             for conn := range conns {
                 if conns[conn].Family == 2 && conns[conn].Status == "LISTEN" {
-                    e := tunnels.list.PushBack(conns[conn].Pid)
                     
-                    host.localPort = int32(conns[conn].Laddr.Port)
-                    host.element = e
-                    
-                    tunnels.hosts[conns[conn].Pid] = &host                    
+                    pid = conns[conn].Pid
+                    host.LocalPort = int32(conns[conn].Laddr.Port)
                     log.Println(host)
                 }
                 
                 if conns[conn].Family == 2 && conns[conn].Status == "ESTABLISHED" {
-                    host.remoteIP = conns[conn].Raddr.IP
+                    host.RemoteIP = conns[conn].Raddr.IP
                 }
                 
             }
@@ -77,7 +69,11 @@ func AddConnection(ev * psnotify.ProcEventFork) {
             if err != nil {
                 fmt.Println(err)
             }
-
+            
+            //Bug: Race Condition. The EXEC event can be missed
+            //Need to find out way to deterministicaly make sure 
+            //child process has executed and new command line is
+            //available
             execev := <-watcher.Exec    
             if (int32(execev.Pid) == cpid) {
                 childproc, _ := ps.NewProcess(cpid)
@@ -86,122 +82,83 @@ func AddConnection(ev * psnotify.ProcEventFork) {
                 config := Config{}
                 json.Unmarshal([]byte(configstr), &config)
                 fmt.Println(config)
-                host.remotePort = config.Port
+                host.RemotePort = config.Port
+                host.Config = config
             }
 
             fmt.Printf("Host %s:%d Connected on Port %d\n", 
-                       host.remoteIP, 
-                       host.remotePort, 
-                       host.localPort)
+                       host.RemoteIP, 
+                       host.RemotePort, 
+                       host.LocalPort)
+
+            //Send AddedEvent Callback.
+            connections[pid] = &host
+            a(pid, host)
             
         }
     }
 }
 
-func RemoveConnection(ev * psnotify.ProcEventExit) {
+func RemoveConnection(ev * psnotify.ProcEventExit, r ConnRemovedEvent) {
     pid := int32(ev.Pid)
-    host, ok := tunnels.hosts[pid]
-    if ok {
-        log.Println("Deleting", tunnels.hosts[pid])
-
-        //If tunnel index points to current index, then move the index forward.
-        if tunnels.idx == host.element {
-            tunnels.idx = tunnels.idx.Next()
-        }   
     
-        //Remove index from the list
-        tunnels.list.Remove(host.element)
-
-        //Delete host entry from map
-        delete(tunnels.hosts, pid)
-
-        fmt.Println(tunnels)
-        pidlist := ""
-        for e := tunnels.list.Front(); e != nil; e = e.Next() {
-            pidlist += strconv.Itoa(int(e.Value.(int32))) + " "
-        }        
-        if len(pidlist) > 0 {
-            log.Println("list>", pidlist)
-        }
+    _, ok := connections[pid]
+    if ok {
+        delete(connections, pid)
+        //Send RemoveEvent Callback
+        r(pid)        
     }
 }
 
-func watchSSH(pid int) {
+func handleEvents(pid int, a ConnAddedEvent, r ConnRemovedEvent) {
+
+    // New Process Watcher. 
     watcher, err := psnotify.NewWatcher()
     if err != nil {
         fmt.Println(err)
     }
 
-    // Process events
+    // Process fork, exec, exit & error events
     go func() {
         for {
             select {
             case ev := <-watcher.Fork:
-                AddConnection(ev)
+                AddConnection(ev, a)
             case <-watcher.Exec:
             case ev := <-watcher.Exit:
-                RemoveConnection(ev)
+                RemoveConnection(ev, r)
 
             case <-watcher.Error:
             }
         }
     }()
 
+    // Process fork, exec, exit & error events
     err = watcher.Watch(pid, psnotify.PROC_EVENT_ALL)
     if err != nil {
         fmt.Println(err)
     }
 }
 
-func Next() *Host {
-    if len(tunnels.hosts) == 0 {
-        return nil
-    }
+func Monitor(a ConnAddedEvent, r ConnRemovedEvent) {
     
-    if tunnels.idx == nil {
-        tunnels.idx = tunnels.list.Front()
-    }
-        
-    host := tunnels.hosts[tunnels.idx.Value.(int32)]
+    connections = make(map[int32]*Host)
     
-    if tunnels.idx.Next() == nil {
-        tunnels.idx = tunnels.list.Front()
-    } else {
-        tunnels.idx = tunnels.idx.Next()
-    }
-    
-    return host
-}
-
-func main() {
-
-    tunnels.hosts = make(map[int32]*Host, 1)
-    tunnels.idx = nil
-    tunnels.list = list.New()
-    tunnels.list.Init()
-
+    // Get the list of all Pids in the system 
+    // and search for sshd process.
     pids, _ := ps.Pids()
     for pid := range pids  {
         proc, _ := ps.NewProcess(pids[pid])
         cmdline, _ := proc.CmdlineSlice()
+
         if len(cmdline) > 0 {
+            // For each sshd process Handle fork, exec & exit 
+            // events for all child processes.
             matched, _ := regexp.MatchString(`/usr/sbin/sshd`, cmdline[0])
             if matched {    
-                fmt.Printf("Watching %d\n", pids[pid])
-                watchSSH(int(pids[pid]))
+                fmt.Printf("Monitoring %d for Connections\n", pids[pid])
+                handleEvents(int(pids[pid]), a, r)
             }            
         }
-    }
-    
-    num := 0
-    
-    for num != 10 {
-        /* ... do stuff ... */
-        fmt.Scanf("%d", &num)
-        
-        if num == 1 {
-            fmt.Println(Next())
-        }
-        
     }
 }
