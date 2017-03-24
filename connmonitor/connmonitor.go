@@ -2,7 +2,6 @@ package connmonitor
 
 import (
     "fmt"
-    "log"
     "regexp"
     "encoding/json"
     
@@ -27,7 +26,7 @@ type Host struct {
 var connections map[int32]*Host
 
 type ConnAddedEvent   func(p int32, h Host)
-type ConnRemovedEvent func(p int32)
+type ConnRemovedEvent func(p int32, h Host)
  
 func AddConnection(ev * psnotify.ProcEventFork, a ConnAddedEvent) {
     ppid := int32(ev.ParentPid)
@@ -40,7 +39,6 @@ func AddConnection(ev * psnotify.ProcEventFork, a ConnAddedEvent) {
     if len(cmdline) > 0 {
         matched, _ := regexp.MatchString("sshd: ci@notty*", cmdline[0])
         if matched {
-            fmt.Println(cmdline)
             conns, _ := netutil.ConnectionsPid("inet", ppid)
 
             //Declare host to store connection information
@@ -51,7 +49,6 @@ func AddConnection(ev * psnotify.ProcEventFork, a ConnAddedEvent) {
                     
                     pid = conns[conn].Pid
                     host.LocalPort = int32(conns[conn].Laddr.Port)
-                    log.Println(host)
                 }
                 
                 if conns[conn].Family == 2 && conns[conn].Status == "ESTABLISHED" {
@@ -81,15 +78,9 @@ func AddConnection(ev * psnotify.ProcEventFork, a ConnAddedEvent) {
                 configstr := childcmdline[len(childcmdline) - 1]
                 config := Config{}
                 json.Unmarshal([]byte(configstr), &config)
-                fmt.Println(config)
                 host.RemotePort = config.Port
                 host.Config = config
             }
-
-            fmt.Printf("Host %s:%d Connected on Port %d\n", 
-                       host.RemoteIP, 
-                       host.RemotePort, 
-                       host.LocalPort)
 
             //Send AddedEvent Callback.
             connections[pid] = &host
@@ -102,11 +93,11 @@ func AddConnection(ev * psnotify.ProcEventFork, a ConnAddedEvent) {
 func RemoveConnection(ev * psnotify.ProcEventExit, r ConnRemovedEvent) {
     pid := int32(ev.Pid)
     
-    _, ok := connections[pid]
+    h, ok := connections[pid]
     if ok {
         delete(connections, pid)
         //Send RemoveEvent Callback
-        r(pid)        
+        r(pid, *h)
     }
 }
 

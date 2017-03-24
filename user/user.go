@@ -149,9 +149,10 @@ func main() {
         user, hostname, err := parsePath(*client)
         check(err)
         
-        url, cmd, err := reverse_tunnel.Start(*private, user, hostname, port)
+        cmd, err := reverse_tunnel.Start(*private, user, hostname, port)
         defer reverse_tunnel.Stop(cmd)
         fmt.Println(url, cmd)
+
     } else if (*server == true) {
         err := addUser(*username)
         check(err)
