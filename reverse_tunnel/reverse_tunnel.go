@@ -10,7 +10,7 @@ import (
 func Start(privKeyFile string, username string, hostname string, port string) (*exec.Cmd, error)  {
 	// ssh open reverse tunnel
 	cmdName := "ssh"
-	cmdArgs := []string{"-q", "-T", "-i", privKeyFile, "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@" + hostname, "detach", "{\"port\":" + port + "}"}
+	cmdArgs := []string{"-q", "-T", "-i", privKeyFile, "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@" + hostname, "{\"port\":" + port + "}"}
     
 	cmd := exec.Command(cmdName, cmdArgs...)
 	out, err := cmd.Output()

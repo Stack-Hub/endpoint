@@ -1,16 +1,34 @@
-package main
+package user
 
 import (
 	"fmt"
-    "flag"
     "regexp"
     "errors"
     "os/exec"
     "os"
+    "io"
     "io/ioutil"
-
-    "./reverse_tunnel"
+    "strconv"
+    "strings"
 )
+
+const (
+    PASSWD      = 0
+    KEY         = 1
+    SSHD_CONFIG = "/etc/ssh/sshd_config" 
+    MATCHBLK    = `Match User %s
+      AllowTCPForwarding yes
+      X11Forwarding no
+      AllowAgentForwarding no
+      PermitTTY yes
+      ForceCommand sleep infinity`
+
+)
+
+type User struct {
+    Name string
+    mode int
+}
 
 func check(e error) {
     if e != nil {
@@ -19,7 +37,87 @@ func check(e error) {
     }
 }
 
-const executable = "reverse_tunnel"
+
+func NewUserWithPassword(prefix string, pass string) *User {
+    username, err := addUniqueUser(prefix)
+    check(err)
+    
+    user := User {username, PASSWD}
+    setUserPasswd(username, pass)
+    addUserSSHDConfig(SSHD_CONFIG, username)
+    
+    return &user
+}
+
+func NewUserWithKey(prefix string, keyfile string) *User {
+    username, err := addUniqueUser(prefix)
+    check(err)
+
+    user := User {username, KEY}
+    allowKeyAccess(username, keyfile)
+    
+    return &user
+}
+
+func (u *User) Delete() error {
+    // Delete user
+	cmdName := "deluser"
+	cmdArgs := []string{"--remove-home", u.Name}
+    
+    out, err := exec.Command(cmdName, cmdArgs...).Output()
+    fmt.Println(string(out))
+    
+    if (u.mode == PASSWD) {
+        removeUserSSHDConfig(SSHD_CONFIG, u.Name)
+    }
+    return err
+}
+
+/**
+ * Add Match block to the end of sshd config file
+ *
+ * path: the path of the file
+ * username: Username for Match block.
+ */
+func addUserSSHDConfig(path, username string) error {    
+      matchBlkStr := fmt.Sprintf(MATCHBLK, username)
+
+      f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+      if err != nil {
+              return err
+      }
+      defer f.Close()
+
+      _, err = f.WriteString(matchBlkStr)
+      if err != nil {
+              return err
+      }
+      return nil
+}
+
+/**
+ * Add Match block to the end of sshd config file
+ *
+ * path: the path of the file
+ * username: Username for Match block.
+ */
+func removeUserSSHDConfig(path, username string) error {    
+      matchBlkStr := fmt.Sprintf(MATCHBLK, username)
+
+      input, err := ioutil.ReadFile("myfile")
+      if err != nil {
+              check(err)
+      }
+    
+      config := strings.Replace(string(input), matchBlkStr, "", -1)
+    
+      err = ioutil.WriteFile(path, []byte(config), 0644)
+      if err != nil {
+              check(err)
+      }
+      
+      return nil
+}
 
 func chown(username string, file string) error {
 
@@ -32,19 +130,99 @@ func chown(username string, file string) error {
     return err
 }
 
-func allowAccess(username string, keyFile string) {
-    forceCommand := `command="%s",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
+// exists returns whether the given file or directory exists or not
+func exists(path string) (bool, error) {
+    _, err := os.Stat(path)
+    if err == nil { return true, nil }
+    if os.IsNotExist(err) { return false, nil }
+    return true, err
+}
+
+func chkUser(username string) error {
+    // Add user
+	cmdName := "id"
+	cmdArgs := []string{"-u", username}
+    
+    out, err := exec.Command(cmdName, cmdArgs...).Output()
+    fmt.Println(string(out))
+    return err
+}
+
+func addUser(username string) error {
+    // Add user
+	cmdName := "adduser"
+	cmdArgs := []string{"--disabled-password", "--gecos", "\"" + username + "\"", username}
+    
+    out, err := exec.Command(cmdName, cmdArgs...).Output()
+    fmt.Println(string(out))
+    return err
+}
+
+func setUserPasswd(username string, passwd string) error {
+    cmdName := "chpasswd"
+    cmdArgs := []string{}
+
+    cmd := exec.Command(cmdName, cmdArgs...)
+
+    stdin, err := cmd.StdinPipe()
+    if err != nil {
+        fmt.Println(err)
+    }
+
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+
+    if err = cmd.Start(); err != nil { //Use start, not run
+        fmt.Println("An error occured: ", err) //replace with logger, or anything you want
+        return err
+    }
+
+    io.WriteString(stdin, username + ":" + passwd)
+    stdin.Close()
+    cmd.Wait()
+    return nil
+}
+
+
+func addUniqueUser(prefix string) (string, error) {
+    username := ""
+    for id := 1; id < 1000; id++ {
+        username = prefix + strconv.Itoa(id) 
+        
+        err := chkUser(username)
+        if err == nil {
+            continue
+        } else {
+            return "", err
+        }
+        
+        addUser(username)
+        break
+    }
+    
+    return username, nil
+}
+
+
+func parsePath(path string) (string, string, error) {
+    var remotePathRegexp = regexp.MustCompile("^((([^@]+)@)([^:]+))$")
+	parts := remotePathRegexp.FindStringSubmatch(path)
+	if len(parts) == 0 {
+		return "", "", errors.New(fmt.Sprintf("Could not parse remote path: [%s]\n", path))
+	}
+    return parts[3], parts[4], nil
+}
+
+func allowKeyAccess(username string, keyFile string) {
+    forceCommand := `command="sleep infinity $SSH_ORIGINAL_COMMAND",no-X11-forwarding,pty,no-agent-forwarding  %s`
     
     // Make home Directory path
     homeDir := "/home/" + username 
-    
-    // Path for force command script
-    path := homeDir+ "/" + executable
-    
+        
     key, err := ioutil.ReadFile(keyFile)
     check(err) 
     
-    entry := fmt.Sprintf(forceCommand, path, key)
+    entry := fmt.Sprintf(forceCommand, key)
 
     if res, _ := exists(homeDir + "/.ssh"); res != true {
         err = os.Mkdir(homeDir + "/.ssh", 0700)
@@ -62,109 +240,3 @@ func allowAccess(username string, keyFile string) {
     check(err)
 }
 
-// exists returns whether the given file or directory exists or not
-func exists(path string) (bool, error) {
-    _, err := os.Stat(path)
-    if err == nil { return true, nil }
-    if os.IsNotExist(err) { return false, nil }
-    return true, err
-}
-
-func writeScript(username string) error {
-    // Shell Script that should be executed when connection is opened
-    script := `#!/bin/bash
-
-    # Get SERVER IP
-    SERVERIP=$(ip route get 8.8.8.8 | awk 'NR==1 {print $NF}')
-    DOMAIN="dupper.co"
-
-    # Get opened port
-    PORT=$(sudo lsof -i -P -n  -p $PPID | grep $PPID | egrep .*IPv4.*LISTEN | sed -E 's/.*IPv4.*:([0-9]+) \(LISTEN\)/\1/g')
-
-    # Inform user
-    echo "Your port is shared at http://$(curl -s http://169.254.169.254/latest/meta-data/public-hostname):${PORT}"
-    echo "Press Ctrl + D to stop sharing."
-
-    if [[ ${SSH_ORIGINAL_COMMAND} == "detach" ]]; then
-        tail -F /tmp/nonexistent 2>/dev/null >/dev/null
-    else
-        cat
-    fi`
-    
-    data := []byte(script)
-    // Path for force command script
-    path := "/home/" + username + "/" + executable
-    err := ioutil.WriteFile(path, data, 0777)
-    return err
-    
-}
-
-func addUser(username string) error {
-    // Add user
-	cmdName := "adduser"
-	cmdArgs := []string{"--disabled-password", "--gecos", "\"" + username + "\"", username}
-    
-    out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println(string(out))
-    return err
-}
-
-func delUser(username string) error {
-    // Delete user
-	cmdName := "deluser"
-	cmdArgs := []string{"--remove-home", username}
-    
-    out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println(string(out))
-    return err
-}
-
-
-func parsePath(path string) (string, string, error) {
-    var remotePathRegexp = regexp.MustCompile("^((([^@]+)@)([^:]+))$")
-	parts := remotePathRegexp.FindStringSubmatch(path)
-	if len(parts) == 0 {
-		return "", "", errors.New(fmt.Sprintf("Could not parse remote path: [%s]\n", path))
-	}
-    return parts[3], parts[4], nil
-}
-
-func main() {
-    // Command line options
-    // Client mode options
-    private := flag.String("priv", "", "Private Key File valid only in Client mode")
-    client := flag.String("c", "", "Server Address in user@host Format")
-
-    // Server mode options
-    public := flag.String("pub", "", "Public Key File valid only in Server mode")
-    server := flag.Bool("s", false, "Run as Server")
-    username := flag.String("u", "", "Username for Server")
-
-    //Parse Command lines
-    flag.Parse()
-    tail := flag.Args()  
-    
-    if (*client != "") {
-        port := tail[0]
-        user, hostname, err := parsePath(*client)
-        check(err)
-        
-        cmd, err := reverse_tunnel.Start(*private, user, hostname, port)
-        defer reverse_tunnel.Stop(cmd)
-        fmt.Println(url, cmd)
-
-    } else if (*server == true) {
-        err := addUser(*username)
-        check(err)
-        defer delUser(*username)
-        
-        // Write script at Path
-        err = writeScript(*username)
-        check(err)
-        
-        allowAccess(*username, *public)
-        
-        var wait int
-        fmt.Scanf("%d", wait)
-    }
-}
