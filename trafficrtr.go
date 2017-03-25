@@ -111,7 +111,7 @@ func main() {
     } else if (*server == true) {
         m = omap.New()
 
-        ssh.Monitor(ConnAddEv, ConnRemoveEv)
+        ssh.Monitor("ci", ConnAddEv, ConnRemoveEv)
 
         l, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
         if err != nil {

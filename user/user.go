@@ -1,3 +1,8 @@
+/**
+ * User package to add and remove linux user with ForceCommand
+ * 
+ * Supports both password based & key based user authenticaion.
+ */
 package user
 
 import (
@@ -20,7 +25,7 @@ const (
       AllowTCPForwarding yes
       X11Forwarding no
       AllowAgentForwarding no
-      PermitTTY yes
+      PermitTTY no
       ForceCommand sleep infinity`
 
 )
@@ -37,28 +42,57 @@ func check(e error) {
     }
 }
 
-
 func NewUserWithPassword(prefix string, pass string) *User {
     username, err := addUniqueUser(prefix)
+    fmt.Println(username)
     check(err)
     
-    user := User {username, PASSWD}
+    u := &User {username, PASSWD}
+    
+    /**
+     * Recover in case of any panic down the stack, 
+     * delete user and return nil
+     */
+    defer func() {
+        if r := recover(); r != nil {
+            fmt.Println("Recovered in f", r)
+            u.Delete()
+            u = nil
+        }
+    }()
+    
     setUserPasswd(username, pass)
     addUserSSHDConfig(SSHD_CONFIG, username)
     
-    return &user
+    return u
 }
 
 func NewUserWithKey(prefix string, keyfile string) *User {
     username, err := addUniqueUser(prefix)
     check(err)
 
-    user := User {username, KEY}
+    u := &User {username, KEY}
+    
+    /**
+     * Recover in case of any panic down the stack, 
+     * delete user and return nil
+     */
+    defer func() {
+        if r := recover(); r != nil {
+            fmt.Println("Recovered in f", r)
+            u.Delete()
+            u = nil
+        }
+    }()
+
     allowKeyAccess(username, keyfile)
     
-    return &user
+    return u
 }
 
+/**
+ * Delete User from system
+ */
 func (u *User) Delete() error {
     // Delete user
 	cmdName := "deluser"
@@ -76,29 +110,26 @@ func (u *User) Delete() error {
 /**
  * Add Match block to the end of sshd config file
  *
- * path: the path of the file
+ * path: the path of the config file
  * username: Username for Match block.
  */
 func addUserSSHDConfig(path, username string) error {    
       matchBlkStr := fmt.Sprintf(MATCHBLK, username)
 
       f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-      if err != nil {
-              return err
-      }
+      check(err)
       defer f.Close()
 
       _, err = f.WriteString(matchBlkStr)
-      if err != nil {
-              return err
-      }
+      check(err)
+
       return nil
 }
 
 /**
- * Add Match block to the end of sshd config file
+ * Remove Match block from sshd config file
  *
- * path: the path of the file
+ * path: the path of the config file
  * username: Username for Match block.
  */
 func removeUserSSHDConfig(path, username string) error {    
@@ -119,6 +150,9 @@ func removeUserSSHDConfig(path, username string) error {
       return nil
 }
 
+/**
+ * Chown based on username
+ */
 func chown(username string, file string) error {
 
     // Add user
@@ -130,7 +164,9 @@ func chown(username string, file string) error {
     return err
 }
 
-// exists returns whether the given file or directory exists or not
+/**
+* Check whether the given file or directory exists or not
+*/
 func exists(path string) (bool, error) {
     _, err := os.Stat(path)
     if err == nil { return true, nil }
@@ -138,6 +174,9 @@ func exists(path string) (bool, error) {
     return true, err
 }
 
+/**
+* Check if User exists
+*/
 func chkUser(username string) error {
     // Add user
 	cmdName := "id"
@@ -148,6 +187,9 @@ func chkUser(username string) error {
     return err
 }
 
+/**
+* Add User without Password
+*/
 func addUser(username string) error {
     // Add user
 	cmdName := "adduser"
@@ -158,6 +200,9 @@ func addUser(username string) error {
     return err
 }
 
+/**
+* Set Password for User
+*/
 func setUserPasswd(username string, passwd string) error {
     cmdName := "chpasswd"
     cmdArgs := []string{}
@@ -165,16 +210,13 @@ func setUserPasswd(username string, passwd string) error {
     cmd := exec.Command(cmdName, cmdArgs...)
 
     stdin, err := cmd.StdinPipe()
-    if err != nil {
-        fmt.Println(err)
-    }
+    check(err)
 
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
 
     if err = cmd.Start(); err != nil { //Use start, not run
-        fmt.Println("An error occured: ", err) //replace with logger, or anything you want
-        return err
+        check(err)
     }
 
     io.WriteString(stdin, username + ":" + passwd)
@@ -183,27 +225,31 @@ func setUserPasswd(username string, passwd string) error {
     return nil
 }
 
-
+/**
+* Generate Unique Username based on give prefix
+* and add user in linux system
+*/
 func addUniqueUser(prefix string) (string, error) {
     username := ""
-    for id := 1; id < 1000; id++ {
+    for id := 1; id < 2; id++ {
         username = prefix + strconv.Itoa(id) 
         
         err := chkUser(username)
         if err == nil {
+            fmt.Println(err)
             continue
-        } else {
-            return "", err
         }
         
         addUser(username)
-        break
+        return username, nil
     }
     
-    return username, nil
+    return "", errors.New("Could not add user with prefix " + prefix)
 }
 
-
+/**
+* Parse user@host string and return user & host 
+*/
 func parsePath(path string) (string, string, error) {
     var remotePathRegexp = regexp.MustCompile("^((([^@]+)@)([^:]+))$")
 	parts := remotePathRegexp.FindStringSubmatch(path)
@@ -213,8 +259,11 @@ func parsePath(path string) (string, string, error) {
     return parts[3], parts[4], nil
 }
 
+/**
+* Add authorized key for the user with force command.
+*/
 func allowKeyAccess(username string, keyFile string) {
-    forceCommand := `command="sleep infinity $SSH_ORIGINAL_COMMAND",no-X11-forwarding,pty,no-agent-forwarding  %s`
+    forceCommand := `command="sleep infinity $SSH_ORIGINAL_COMMAND",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
     
     // Make home Directory path
     homeDir := "/home/" + username 
