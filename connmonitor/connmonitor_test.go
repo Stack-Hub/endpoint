@@ -1,8 +1,14 @@
-package user
+package connmonitor
 
 import (
     "testing"
+    "strconv"
+    "fmt"
+    "os"
+    "os/exec"
     "io/ioutil"
+    
+    "../user"
 )
 
 const (
@@ -36,104 +42,82 @@ SEU+nRcQdT52CZC1kp3lSvhCKDmXo6+UWWmWy67jebN3QnfVZDn6
 -----END RSA PRIVATE KEY-----`
 )
 
+
 type testpair struct {
     userprefix string
     password string
+    ports []int
 }
 
 var data = []testpair {
-                        {"tr", "1234567890"},
-                        {"tr", "0987654321"},
-                      }
+    {"tr", "1234567890", []int{1000, 2000, 3000, 4000, 5000}},
+    {"tr", "0987654321", []int{1000, 2000, 3000, 4000, 5000}},
+    }
 
 
-func TestAddSingleUserPasswd(t *testing.T) {
+/**
+ * openTunnel
+ */
+func openTunnel(username string, passwd string, p int) (*exec.Cmd, error) {    
+    port := strconv.Itoa(p)
+    
+	cmdName := "sshpass"
+	cmdArgs := []string{"-p", passwd, "ssh", "-q", "-T", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}
+    fmt.Println(cmdName, cmdArgs)
+    
+	cmd := exec.Command(cmdName, cmdArgs...)
+    err := cmd.Start()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error opening ssh (revers tunnel)", err)
+		os.Exit(1)
+	}
 
-    u := NewUserWithPassword(data[0].userprefix, data[0].password)
+    return cmd, err
+}
 
-    err := chkUser(u.Name)
-    if err != nil {
-        t.Error(
-            "For", u.Name,
-            "expected", "User to Exist",
-            "got", err,
-        )        
+
+func TestConnectionsWithPasswd(t *testing.T) {
+    u := user.NewUserWithPassword(data[0].userprefix, data[0].password)
+    ch := make(chan Host, len(data[0].ports))
+    
+    ConnAddEv := func(p int32, h Host) {
+        fmt.Printf("Connected %s:%d on Port %d\n", 
+                   h.RemoteIP, 
+                   h.RemotePort, 
+                   h.LocalPort)
+        ch <- h
+    }
+
+    ConnRemoveEv := func(p int32, h Host) {
+        fmt.Printf("Removed %s:%d from Port %d\n", 
+                   h.RemoteIP, 
+                   h.RemotePort, 
+                   h.LocalPort)
     }
     
+    Monitor(u.Name, ConnAddEv, ConnRemoveEv)
+    
+    cmd := make([]*exec.Cmd, len(data[0].ports))
+    for i, port := range data[0].ports {
+        cmd[i], _ = openTunnel(u.Name, data[0].password, port)
+    }
+    
+    for i, _ := range data[0].ports {
+        h := <- ch
+        fmt.Printf("Received %s:%d on Port %d\n", 
+                   h.RemoteIP, 
+                   h.RemotePort, 
+                   h.LocalPort)
+        cmd[i].Process.Kill()
+    }
     u.Delete()
-
-}
-
-func TestAddMultipleleUserPasswd(t *testing.T) {
-
-    users := make(map[string]*User)
     
-    for _, auth := range data {
-        u := NewUserWithPassword(auth.userprefix, auth.password)
-        users[u.Name] = u
-
-        err := chkUser(u.Name)
-        if err != nil {
-            t.Error(
-                "For", u.Name,
-                "expected", "User to Exist",
-                "got", err,
-            )        
-        }
-    }
-    
-    for _, u := range users {
-        u.Delete()                
-    }
     
 }
 
-func TestAddSingleUserKey(t *testing.T) {
-    
+func TestConnectionsWithKey(t *testing.T) {
     err := ioutil.WriteFile("/tmp/user.pub", []byte(PUBKEY), 0644)
     if err != nil {
         t.Error("Error writing key file", err)  
-    }
-    
-    u := NewUserWithKey(data[0].userprefix, "/tmp/user.pub")
-
-    err = chkUser(u.Name)
-    if err != nil {
-        t.Error(
-            "For", u.Name,
-            "expected", "User to Exist",
-            "got", err,
-        )        
-    }
-    
-    u.Delete()
-
-}
-
-func TestAddMultipleleUserKey(t *testing.T) {
-    users := make(map[string]*User)
-
-    err := ioutil.WriteFile("/tmp/user.pub", []byte(PUBKEY), 0644)
-    if err != nil {
-        t.Error("Error writing key file", err)  
-    }
-    
-    for _, auth := range data {
-        u := NewUserWithKey(auth.userprefix, "/tmp/user.pub")
-        users[u.Name] = u
-
-        err = chkUser(u.Name)
-        if err != nil {
-            t.Error(
-                "For", u.Name,
-                "expected", "User to Exist",
-                "got", err,
-            )        
-        }
-    }
-
-    for _, u := range users {
-        u.Delete()                
-    }
-
+    }    
 }

@@ -43,6 +43,7 @@ func AddConnection(ev * psnotify.ProcEventFork, username string, a ConnAddedEven
         matched, _ := regexp.MatchString(procName, cmdline[0])
         if matched {
             conns, _ := netutil.ConnectionsPid("inet", ppid)
+            fmt.Println(conns)
 
             //Declare host to store connection information
             var host Host
@@ -69,21 +70,29 @@ func AddConnection(ev * psnotify.ProcEventFork, username string, a ConnAddedEven
             if err != nil {
                 fmt.Println(err)
             }
-            
-            //Bug: Race Condition. The EXEC event can be missed
-            //Need to find out way to deterministicaly make sure 
-            //child process has executed and new command line is
-            //available
-            execev := <-watcher.Exec    
-            if (int32(execev.Pid) == cpid) {
+
+            for ;; {
                 childproc, _ := ps.NewProcess(cpid)
-                childcmdline, _ := childproc.CmdlineSlice()
-                configstr := childcmdline[len(childcmdline) - 1]
+                childcmdline, _ := childproc.Cmdline()
+                fmt.Println(childcmdline)
+
+                regex := regexp.MustCompile(`^(tail -F ({.*}))$`)
+                m := regex.FindStringSubmatch(childcmdline)
+                fmt.Println(m)
+                if len(m) == 0 {
+                    <-watcher.Exec
+                    continue
+                }
+                
+                childcmdlineArray, _ := childproc.CmdlineSlice()
+                configstr := childcmdlineArray[len(childcmdlineArray) - 1]
+                fmt.Println(configstr)
                 config := Config{}
                 json.Unmarshal([]byte(configstr), &config)
                 host.RemotePort = config.Port                
                 host.Config = config
-                host.cpid = execev.Pid
+                host.cpid = int(cpid)
+                break
             }
 
             //Send AddedEvent Callback.
@@ -125,10 +134,10 @@ func handleEvents(username string, pid int, a ConnAddedEvent, r ConnRemovedEvent
         for {
             select {
             case ev := <-watcher.Fork:
-                AddConnection(ev, username, a)
+                go AddConnection(ev, username, a)
             case <-watcher.Exec:
             case ev := <-watcher.Exit:
-                RemoveConnection(ev, r)
+                go RemoveConnection(ev, r)
 
             case <-watcher.Error:
             }
