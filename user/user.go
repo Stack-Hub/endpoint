@@ -21,12 +21,14 @@ const (
     PASSWD      = 0
     KEY         = 1
     SSHD_CONFIG = "/etc/ssh/sshd_config" 
-    MATCHBLK    = `Match User %s
-      AllowTCPForwarding yes
-      X11Forwarding no
-      AllowAgentForwarding no
-      PermitTTY no
-      ForceCommand sleep infinity`
+    MATCHBLK    = `
+Match User %s
+    AllowTCPForwarding yes
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitTTY no
+    ForceCommand sleep infinity
+`
 
 )
 
@@ -44,7 +46,6 @@ func check(e error) {
 
 func NewUserWithPassword(prefix string, pass string) *User {
     username, err := addUniqueUser(prefix)
-    fmt.Println(username)
     check(err)
     
     u := &User {username, PASSWD}
@@ -63,6 +64,7 @@ func NewUserWithPassword(prefix string, pass string) *User {
     
     setUserPasswd(username, pass)
     addUserSSHDConfig(SSHD_CONFIG, username)
+    restartSSHServer()
     
     return u
 }
@@ -103,6 +105,7 @@ func (u *User) Delete() error {
     
     if (u.mode == PASSWD) {
         removeUserSSHDConfig(SSHD_CONFIG, u.Name)
+        restartSSHServer()
     }
     return err
 }
@@ -135,7 +138,7 @@ func addUserSSHDConfig(path, username string) error {
 func removeUserSSHDConfig(path, username string) error {    
       matchBlkStr := fmt.Sprintf(MATCHBLK, username)
 
-      input, err := ioutil.ReadFile("myfile")
+      input, err := ioutil.ReadFile(path)
       if err != nil {
               check(err)
       }
@@ -148,6 +151,19 @@ func removeUserSSHDConfig(path, username string) error {
       }
       
       return nil
+}
+
+/**
+ * Restart SSH Server
+ */
+func restartSSHServer() error {    
+      
+	cmdName := "service"
+    cmdArgs := []string{"ssh", "restart"}
+    
+    out, err := exec.Command(cmdName, cmdArgs...).Output()
+    fmt.Println(string(out))
+    return err
 }
 
 /**
@@ -183,7 +199,7 @@ func chkUser(username string) error {
 	cmdArgs := []string{"-u", username}
     
     out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println(string(out))
+    fmt.Println("chkuser ", string(out))
     return err
 }
 
@@ -196,7 +212,7 @@ func addUser(username string) error {
 	cmdArgs := []string{"--disabled-password", "--gecos", "\"" + username + "\"", username}
     
     out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println(string(out))
+    fmt.Println("adduser ", string(out))
     return err
 }
 
@@ -231,7 +247,7 @@ func setUserPasswd(username string, passwd string) error {
 */
 func addUniqueUser(prefix string) (string, error) {
     username := ""
-    for id := 1; id < 2; id++ {
+    for id := 1; id < 1000; id++ {
         username = prefix + strconv.Itoa(id) 
         
         err := chkUser(username)
