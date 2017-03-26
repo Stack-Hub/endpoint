@@ -279,7 +279,7 @@ func parsePath(path string) (string, string, error) {
 * Add authorized key for the user with force command.
 */
 func allowKeyAccess(username string, keyFile string) {
-    forceCommand := `command="sleep infinity $SSH_ORIGINAL_COMMAND",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
+    forceCommand := `command="tail -F $SSH_ORIGINAL_COMMAND",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
     
     // Make home Directory path
     homeDir := "/home/" + username 

@@ -7,6 +7,8 @@ import (
     "os"
     "os/exec"
     "io/ioutil"
+    "runtime"
+    "time"
     
     "../user"
 )
@@ -40,6 +42,10 @@ AkwHqQKBgB+lglg9YVTavNepvRh5knKTEneVGappbybcN6z1AWQq6Pg53Ouq0WnN
 dmwbNzHAFhZtstsdCqWfgu3TRzbhwIUSTtpa/jEgk4ZPO+gRv9nk00nRPvTR17pM
 SEU+nRcQdT52CZC1kp3lSvhCKDmXo6+UWWmWy67jebN3QnfVZDn6
 -----END RSA PRIVATE KEY-----`
+    PASSWD  = 1
+    KEY     = 2
+    PUBKEYFILE  = "/tmp/user.pub"
+    PRIVKEYFILE = "/tmp/user"
 )
 
 
@@ -50,42 +56,59 @@ type testpair struct {
 }
 
 var data = []testpair {
-    {"tr", "1234567890", []int{1000, 2000, 3000, 4000, 5000}},
-    {"tr", "0987654321", []int{1000, 2000, 3000, 4000, 5000}},
+        {"tr", "1234567890", []int{2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009, 2008, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020}},
+        {"tr", "0987654321", []int{2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009, 2008, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020}},
     }
 
 
 /**
  * openTunnel
  */
-func openTunnel(username string, passwd string, p int) (*exec.Cmd, error) {    
+func openTunnel(username string, passwd string, p int, mode int) (*exec.Cmd, error) {    
     port := strconv.Itoa(p)
+    var cmdName string
+    var cmdArgs []string
     
-	cmdName := "sshpass"
-	cmdArgs := []string{"-p", passwd, "ssh", "-q", "-T", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}
-    fmt.Println(cmdName, cmdArgs)
+    if mode == PASSWD {
+        cmdName = "sshpass"
+        cmdArgs = []string{"-p", passwd, "ssh", "-q", "-T", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}        
+    } else {
+        cmdName = "ssh"
+        cmdArgs = []string{"-i", PRIVKEYFILE, "-q", "-T", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}                
+    }
     
 	cmd := exec.Command(cmdName, cmdArgs...)
+    
     err := cmd.Start()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error opening ssh (revers tunnel)", err)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "Error opening reverse tunnel", err)
 	}
 
     return cmd, err
 }
 
+func establishConns(u *user.User, data testpair, cmd map[int32]*exec.Cmd, mode int, a ConnAddedEvent, r ConnRemovedEvent) {    
+    Monitor(u.Name, a, r)
+    
+    for _, port := range data.ports {
+        cmd[int32(port)], _ = openTunnel(u.Name, data.password, port, mode)
+        
+        //Rate limit the connections because, too much fork events causes event drops at server.
+        //TODO: Need to figure out better way for connection detection.
+        time.Sleep(1000 * time.Millisecond)
+    }
+}
 
-func TestConnectionsWithPasswd(t *testing.T) {
-    u := user.NewUserWithPassword(data[0].userprefix, data[0].password)
-    ch := make(chan Host, len(data[0].ports))
+func TestSingleUserConnectionsWithPasswd(t *testing.T) {
+    cmd := make(map[int32]*exec.Cmd, len(data[0].ports))
     
     ConnAddEv := func(p int32, h Host) {
         fmt.Printf("Connected %s:%d on Port %d\n", 
                    h.RemoteIP, 
                    h.RemotePort, 
                    h.LocalPort)
-        ch <- h
+
+        cmd[h.RemotePort].Process.Kill()
     }
 
     ConnRemoveEv := func(p int32, h Host) {
@@ -93,31 +116,112 @@ func TestConnectionsWithPasswd(t *testing.T) {
                    h.RemoteIP, 
                    h.RemotePort, 
                    h.LocalPort)
+        delete(cmd, h.RemotePort)
     }
     
-    Monitor(u.Name, ConnAddEv, ConnRemoveEv)
+    u := user.NewUserWithPassword(data[0].userprefix, data[0].password)
+
+    establishConns(u, data[0], cmd, PASSWD, ConnAddEv, ConnRemoveEv)
+
+    func() {
+        for {
+            if (len(cmd) == 0) {
+                fmt.Println("Finished.")
+                break
+            }
+            runtime.Gosched()
+        }   
+    }()
     
-    cmd := make([]*exec.Cmd, len(data[0].ports))
-    for i, port := range data[0].ports {
-        cmd[i], _ = openTunnel(u.Name, data[0].password, port)
-    }
-    
-    for i, _ := range data[0].ports {
-        h := <- ch
-        fmt.Printf("Received %s:%d on Port %d\n", 
-                   h.RemoteIP, 
-                   h.RemotePort, 
-                   h.LocalPort)
-        cmd[i].Process.Kill()
-    }
     u.Delete()
-    
-    
 }
 
-func TestConnectionsWithKey(t *testing.T) {
-    err := ioutil.WriteFile("/tmp/user.pub", []byte(PUBKEY), 0644)
+func TestMultipleUserConnectionsWithPasswd(t *testing.T) {
+    cmd := make([]map[int32]*exec.Cmd, len(data))
+    u   := make([]*user.User, len(data))
+
+    for i, _ := range data {
+        cmd[i] = make(map[int32]*exec.Cmd, len(data[i].ports))
+    
+        ConnAddEv := func(p int32, h Host) {
+            fmt.Printf("Connected %s:%d on Port %d\n", 
+                       h.RemoteIP, 
+                       h.RemotePort, 
+                       h.LocalPort)
+
+            cmd[i][h.RemotePort].Process.Kill()
+        }
+
+        ConnRemoveEv := func(p int32, h Host) {
+            fmt.Printf("Removed %s:%d from Port %d\n", 
+                       h.RemoteIP, 
+                       h.RemotePort, 
+                       h.LocalPort)
+            delete(cmd[i], h.RemotePort)
+        }
+        u[i] = user.NewUserWithPassword(data[i].userprefix, data[i].password)
+        establishConns(u[i], data[i], cmd[i], PASSWD, ConnAddEv, ConnRemoveEv)
+    }
+
+    for i, _ := range data {
+
+        func() {
+            for {
+                if (len(cmd[i]) == 0) {
+                    fmt.Println("Finished.")
+                    break
+                }
+                runtime.Gosched()
+            }   
+        }()
+
+        u[i].Delete()
+    }
+}
+
+func TestSingleUserConnectionsWithKey(t *testing.T) {
+    err := ioutil.WriteFile(PUBKEYFILE, []byte(PUBKEY), 0600)
     if err != nil {
         t.Error("Error writing key file", err)  
     }    
+
+    err = ioutil.WriteFile(PRIVKEYFILE, []byte(PRIVKEY), 0600)
+    if err != nil {
+        t.Error("Error writing key file", err)  
+    }    
+    
+    cmd := make(map[int32]*exec.Cmd, len(data[0].ports))
+    
+    ConnAddEv := func(p int32, h Host) {
+        fmt.Printf("Connected %s:%d on Port %d\n", 
+                   h.RemoteIP, 
+                   h.RemotePort, 
+                   h.LocalPort)
+
+        cmd[h.RemotePort].Process.Kill()
+    }
+
+    ConnRemoveEv := func(p int32, h Host) {
+        fmt.Printf("Removed %s:%d from Port %d\n", 
+                   h.RemoteIP, 
+                   h.RemotePort, 
+                   h.LocalPort)
+        delete(cmd, h.RemotePort)
+    }
+    
+    u := user.NewUserWithKey(data[0].userprefix, PUBKEYFILE)
+
+    establishConns(u, data[0], cmd, KEY, ConnAddEv, ConnRemoveEv)
+
+    func() {
+        for {
+            if (len(cmd) == 0) {
+                fmt.Println("Finished.")
+                break
+            }
+            runtime.Gosched()
+        }   
+    }()
+    
+    u.Delete()    
 }

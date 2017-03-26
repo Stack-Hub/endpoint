@@ -42,8 +42,8 @@ func AddConnection(ev * psnotify.ProcEventFork, username string, a ConnAddedEven
         procName := "sshd: " + username + "@notty"
         matched, _ := regexp.MatchString(procName, cmdline[0])
         if matched {
+            fmt.Println("Detected", cmdline, ppid)
             conns, _ := netutil.ConnectionsPid("inet", ppid)
-            fmt.Println(conns)
 
             //Declare host to store connection information
             var host Host
@@ -74,19 +74,17 @@ func AddConnection(ev * psnotify.ProcEventFork, username string, a ConnAddedEven
             for ;; {
                 childproc, _ := ps.NewProcess(cpid)
                 childcmdline, _ := childproc.Cmdline()
-                fmt.Println(childcmdline)
-
+                
                 regex := regexp.MustCompile(`^(tail -F ({.*}))$`)
                 m := regex.FindStringSubmatch(childcmdline)
-                fmt.Println(m)
                 if len(m) == 0 {
+                    fmt.Println(cpid, "Blocking...")
                     <-watcher.Exec
                     continue
                 }
                 
                 childcmdlineArray, _ := childproc.CmdlineSlice()
                 configstr := childcmdlineArray[len(childcmdlineArray) - 1]
-                fmt.Println(configstr)
                 config := Config{}
                 json.Unmarshal([]byte(configstr), &config)
                 host.RemotePort = config.Port                
@@ -126,7 +124,7 @@ func handleEvents(username string, pid int, a ConnAddedEvent, r ConnRemovedEvent
     // New Process Watcher. 
     watcher, err := psnotify.NewWatcher()
     if err != nil {
-        fmt.Println(err)
+        panic(err)
     }
 
     // Process fork, exec, exit & error events
