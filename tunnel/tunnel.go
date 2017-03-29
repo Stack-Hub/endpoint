@@ -1,4 +1,4 @@
-package main
+package tunnel
 
 import (
     "fmt"
@@ -88,8 +88,4 @@ func SendConfig() {
     stdout.Close()
     waitForPPidExit(int(ppid))
 
-}
-
-func main () {
-    SendConfig()
 }

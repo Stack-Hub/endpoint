@@ -48,7 +48,7 @@ func AddConnection(ev * psnotify.ProcEventExec, uid int, a ConnAddedEvent) {
         tunnelCmdline, _ := tunnelProc.CmdlineSlice()
 
         if len(tunnelCmdline) > 0 {
-            procName := os.Args[0] + " -t"
+            procName := "/usr/sbin/trafficrouter"
             matched, _ := regexp.MatchString(procName, tunnelCmdline[0])
             if matched {
                 //Send AddedEvent Callback.

@@ -77,6 +77,7 @@ func openTunnel(username string, passwd string, p int, mode int) (*exec.Cmd, err
         cmdArgs = []string{"-i", PRIVKEYFILE, "-q", "-T", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}                
     }
     
+    fmt.Println(cmdName, cmdArgs)
 	cmd := exec.Command(cmdName, cmdArgs...)
     
     err := cmd.Start()

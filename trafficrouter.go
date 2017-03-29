@@ -14,6 +14,8 @@ import (
     ssh "./connmonitor" 
     "./omap"
     "./reverse_tunnel"
+    "./tunnel"
+    "./user"
 )
 
 const (
@@ -94,6 +96,8 @@ func main() {
     server := flag.Bool("s", false, "Run as Server")
 //    username := flag.String("u", "", "Username for Server")
 
+    tnl := flag.Bool("t", false, "Tunnel command used as SSH Force Command")
+
     //Parse Command lines
     flag.Parse()
     tail := flag.Args()  
@@ -110,8 +114,9 @@ func main() {
         
     } else if (*server == true) {
         m = omap.New()
-
-        ssh.Monitor("ci", ConnAddEv, ConnRemoveEv)
+        u := user.NewUserWithPassword("tr", "1234567890")
+        
+        ssh.Monitor(u.Uid, ConnAddEv, ConnRemoveEv)
 
         l, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
         if err != nil {
@@ -132,5 +137,8 @@ func main() {
             // Handle connections in a new goroutine.
             go handleRequest(conn)
         }    
+    } else if (*tnl == true) {
+        tunnel.SendConfig()
     }
+
 }
