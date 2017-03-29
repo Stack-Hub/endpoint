@@ -88,7 +88,7 @@ func openTunnel(username string, passwd string, p int, mode int) (*exec.Cmd, err
 }
 
 func establishConns(u *user.User, data testpair, cmd map[int32]*exec.Cmd, mode int, a ConnAddedEvent, r ConnRemovedEvent) {    
-    Monitor(u.Name, a, r)
+    Monitor(u.Uid, a, r)
     
     for _, port := range data.ports {
         cmd[int32(port)], _ = openTunnel(u.Name, data.password, port, mode)

@@ -5,100 +5,77 @@ import (
     "regexp"
     "encoding/json"
     "os"
+    "strconv"
+    "bytes"
+    "io"
+    "syscall"
     
     "github.com/mindreframer/golang-stuff/github.com/jondot/gosigar/psnotify"
-    netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
 
 )
 
 type Config struct {
     Port int32  `json:"port"`
-    Mode string `json:"mode"`
 }
 
 type Host struct {
-    LocalPort  int32
-    RemoteIP   string
-    RemotePort int32
-    Config     Config
-    cpid       int
+    LocalPort  int32  `json:"lport"`
+    RemoteIP   string `json:"raddr"`
+    RemotePort int32  `json:"rport"`
+    Config     Config `json:"config"`
+    Uid        int    `json:"uid"`
 }
 
 var connections map[int32]*Host
+var processing map[int32]bool
+
 
 type ConnAddedEvent   func(p int32, h Host)
 type ConnRemovedEvent func(p int32, h Host)
  
-func AddConnection(ev * psnotify.ProcEventFork, username string, a ConnAddedEvent) {
-    ppid := int32(ev.ParentPid)
-    cpid := int32(ev.ChildPid)
-    var pid int32
+func AddConnection(ev * psnotify.ProcEventExec, uid int, a ConnAddedEvent) {
+    pid := int32(ev.Pid)
     
-    proc, _ := ps.NewProcess(ppid)
-    cmdline, _ := proc.CmdlineSlice()
+    _, ok := processing[pid]
+    if !ok {
+        processing[pid] = true
+    
+        //Declare host to store connection information
+        var host Host
 
-    if len(cmdline) > 0 {
-        procName := "sshd: " + username + "@notty"
-        matched, _ := regexp.MatchString(procName, cmdline[0])
-        if matched {
-            fmt.Println("Detected", cmdline, ppid)
-            conns, _ := netutil.ConnectionsPid("inet", ppid)
+        tunnelProc, _ := ps.NewProcess(pid)
+        tunnelCmdline, _ := tunnelProc.CmdlineSlice()
 
-            //Declare host to store connection information
-            var host Host
-            
-            for conn := range conns {
-                if conns[conn].Family == 2 && conns[conn].Status == "LISTEN" {
-                    
-                    pid = conns[conn].Pid
-                    host.LocalPort = int32(conns[conn].Laddr.Port)
+        if len(tunnelCmdline) > 0 {
+            procName := os.Args[0] + " -t"
+            matched, _ := regexp.MatchString(procName, tunnelCmdline[0])
+            if matched {
+                //Send AddedEvent Callback.
+                connections[pid] = &host
+
+                fmt.Println("Detected", tunnelCmdline, pid)
+
+                namedPipe := "/tmp/" + strconv.Itoa(int(pid))
+                syscall.Mkfifo(namedPipe, 0600)
+                stdout, _ := os.OpenFile(namedPipe, os.O_RDONLY, 0600)
+                var buff bytes.Buffer
+                io.Copy(&buff, stdout)
+                stdout.Close()
+                fmt.Printf("Payload: %s\n", buff.String())
+
+                if err := json.Unmarshal(buff.Bytes(), &host); err != nil {
+                        panic(err)
                 }
-                
-                if conns[conn].Family == 2 && conns[conn].Status == "ESTABLISHED" {
-                    host.RemoteIP = conns[conn].Raddr.IP
-                }
-                
-            }
-            
-            watcher, err := psnotify.NewWatcher()
-            if err != nil {
-                fmt.Println(err)
-            }
 
-            err = watcher.Watch(ev.ChildPid, psnotify.PROC_EVENT_EXEC)
-            if err != nil {
-                fmt.Println(err)
-            }
+                fmt.Println("Host: ", host)
 
-            for ;; {
-                childproc, _ := ps.NewProcess(cpid)
-                childcmdline, _ := childproc.Cmdline()
-                
-                regex := regexp.MustCompile(`^(tail -F ({.*}))$`)
-                m := regex.FindStringSubmatch(childcmdline)
-                if len(m) == 0 {
-                    fmt.Println(cpid, "Blocking...")
-                    <-watcher.Exec
-                    continue
-                }
-                
-                childcmdlineArray, _ := childproc.CmdlineSlice()
-                configstr := childcmdlineArray[len(childcmdlineArray) - 1]
-                config := Config{}
-                json.Unmarshal([]byte(configstr), &config)
-                host.RemotePort = config.Port                
-                host.Config = config
-                host.cpid = int(cpid)
-                break
-            }
+                a(pid, host)
 
-            //Send AddedEvent Callback.
-            connections[pid] = &host
-            a(pid, host)
-            
+            }
         }
     }
+    delete(processing, pid)
 }
 
 func RemoveConnection(ev * psnotify.ProcEventExit, r ConnRemovedEvent) {
@@ -106,20 +83,13 @@ func RemoveConnection(ev * psnotify.ProcEventExit, r ConnRemovedEvent) {
     
     h, ok := connections[pid]
     if ok {
-        proc, err := os.FindProcess(h.cpid)
-        if err != nil {
-            fmt.Println(err)
-        }
-        
-        proc.Kill()
-        
         delete(connections, pid)
         //Send RemoveEvent Callback
         r(pid, *h)
     }
 }
 
-func handleEvents(username string, pid int, a ConnAddedEvent, r ConnRemovedEvent) {
+func handleEvents(uid int, pid int, a ConnAddedEvent, r ConnRemovedEvent) {
 
     // New Process Watcher. 
     watcher, err := psnotify.NewWatcher()
@@ -131,27 +101,25 @@ func handleEvents(username string, pid int, a ConnAddedEvent, r ConnRemovedEvent
     go func() {
         for {
             select {
-            case ev := <-watcher.Fork:
-                go AddConnection(ev, username, a)
-            case <-watcher.Exec:
+            case ev := <-watcher.Exec:
+                go AddConnection(ev, uid, a)
             case ev := <-watcher.Exit:
                 go RemoveConnection(ev, r)
-
-            case <-watcher.Error:
             }
         }
     }()
 
     // Process fork, exec, exit & error events
-    err = watcher.Watch(pid, psnotify.PROC_EVENT_ALL)
+    err = watcher.Watch(pid, psnotify.PROC_EVENT_EXEC | psnotify.PROC_EVENT_EXIT)
     if err != nil {
         fmt.Println(err)
     }
 }
 
-func Monitor(username string, a ConnAddedEvent, r ConnRemovedEvent) {
+func Monitor(uid int, a ConnAddedEvent, r ConnRemovedEvent) {
     
     connections = make(map[int32]*Host)
+    processing  = make(map[int32]bool)
     
     // Get the list of all Pids in the system 
     // and search for sshd process.
@@ -166,7 +134,7 @@ func Monitor(username string, a ConnAddedEvent, r ConnRemovedEvent) {
             matched, _ := regexp.MatchString(`/usr/sbin/sshd`, cmdline[0])
             if matched {    
                 fmt.Printf("Monitoring %d for Connections\n", pids[pid])
-                handleEvents(username, int(pids[pid]), a, r)
+                handleEvents(uid, int(pids[pid]), a, r)
             }            
         }
     }

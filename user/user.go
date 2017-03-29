@@ -10,6 +10,7 @@ import (
     "regexp"
     "errors"
     "os/exec"
+    "os/user"
     "os"
     "io"
     "io/ioutil"
@@ -27,13 +28,14 @@ Match User %s
     X11Forwarding no
     AllowAgentForwarding no
     PermitTTY no
-    ForceCommand tail -F $SSH_ORIGINAL_COMMAND
+    ForceCommand %s -t $SSH_ORIGINAL_COMMAND
 `
 
 )
 
 type User struct {
     Name string
+    Uid  int
     mode int
 }
 
@@ -48,7 +50,10 @@ func NewUserWithPassword(prefix string, pass string) *User {
     username, err := addUniqueUser(prefix)
     check(err)
     
-    u := &User {username, PASSWD}
+    uid, err := user.Lookup(username)
+    check(err)
+    
+    u := &User {username, uid, PASSWD}
     
     /**
      * Recover in case of any panic down the stack, 
@@ -73,7 +78,10 @@ func NewUserWithKey(prefix string, keyfile string) *User {
     username, err := addUniqueUser(prefix)
     check(err)
 
-    u := &User {username, KEY}
+    uid, err := user.Lookup(username)
+    check(err)
+        
+    u := &User {username, uid, KEY}
     
     /**
      * Recover in case of any panic down the stack, 
@@ -117,7 +125,7 @@ func (u *User) Delete() error {
  * username: Username for Match block.
  */
 func addUserSSHDConfig(path, username string) error {    
-      matchBlkStr := fmt.Sprintf(MATCHBLK, username)
+      matchBlkStr := fmt.Sprintf(MATCHBLK, username, os.Args[0])
 
       f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
       check(err)
@@ -136,7 +144,7 @@ func addUserSSHDConfig(path, username string) error {
  * username: Username for Match block.
  */
 func removeUserSSHDConfig(path, username string) error {    
-      matchBlkStr := fmt.Sprintf(MATCHBLK, username)
+      matchBlkStr := fmt.Sprintf(MATCHBLK, username, os.Args[0])
 
       input, err := ioutil.ReadFile(path)
       if err != nil {
@@ -279,7 +287,7 @@ func parsePath(path string) (string, string, error) {
 * Add authorized key for the user with force command.
 */
 func allowKeyAccess(username string, keyFile string) {
-    forceCommand := `command="tail -F $SSH_ORIGINAL_COMMAND",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
+    forceCommand := `command="%s -t $SSH_ORIGINAL_COMMAND",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
     
     // Make home Directory path
     homeDir := "/home/" + username 
@@ -287,7 +295,7 @@ func allowKeyAccess(username string, keyFile string) {
     key, err := ioutil.ReadFile(keyFile)
     check(err) 
     
-    entry := fmt.Sprintf(forceCommand, key)
+    entry := fmt.Sprintf(forceCommand, os.Args[0], key)
 
     if res, _ := exists(homeDir + "/.ssh"); res != true {
         err = os.Mkdir(homeDir + "/.ssh", 0700)

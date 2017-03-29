@@ -4,6 +4,7 @@ import (
     "fmt"
     "encoding/json"
     "os"
+    "strconv"
     
     "github.com/mindreframer/golang-stuff/github.com/jondot/gosigar/psnotify"
     netutil "github.com/shirou/gopsutil/net"
@@ -12,16 +13,14 @@ import (
 
 type Config struct {
     Port int32  `json:"port"`
-    Mode string `json:"mode"`
 }
 
 type Host struct {
-    Username   string
-    LocalPort  int32
-    RemoteIP   string
-    RemotePort int32
-    Config     Config
-    PPid        int
+    LocalPort  int32  `json:"lport"`
+    RemoteIP   string `json:"raddr"`
+    RemotePort int32  `json:"rport"`
+    Config     Config `json:"config"`
+    Uid        int    `json:"uid"`
 }
 
 func waitForPPidExit(ppid int) {
@@ -48,6 +47,7 @@ func waitForPPidExit(ppid int) {
 func SendConfig() {
     ppid := int32(os.Getppid())
     fmt.Println("ppid = ", ppid)
+    pid  := os.Getpid()
     
     pproc, _ := ps.NewProcess(ppid)
     pcmdline, _ := pproc.CmdlineSlice()
@@ -75,9 +75,17 @@ func SendConfig() {
     json.Unmarshal([]byte(configstr), &config)
     host.RemotePort = config.Port                
     host.Config = config
-    host.PPid = int(ppid)
+    host.Uid = os.Getuid()
     
     fmt.Println(host)
+    
+    namedPipe := "/tmp/" + strconv.Itoa(pid)
+    stdout, _ := os.OpenFile(namedPipe, os.O_RDWR, 0600)
+    
+    payload, _ := json.Marshal(host)
+    
+    stdout.Write(payload)
+    stdout.Close()
     waitForPPidExit(int(ppid))
 
 }
