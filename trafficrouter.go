@@ -10,6 +10,7 @@ import (
     "regexp"
     "errors"
     "runtime"
+    "syscall"
     
     "./omap"
     "./client"
@@ -48,7 +49,7 @@ func handleRequest(in net.Conn) {
         // Send a response back to person contacting us.
         in.Write([]byte("No Routes available."))   
     } else {
-        port := strconv.Itoa(int(h.Value.(server.Host).LocalPort))
+        port := strconv.Itoa(int(h.Value.(server.Host).ListenPort))
         out, _ := net.Dial("tcp", "127.0.0.1:" + port)
         go io.Copy(out, in)
         io.Copy(in, out)
@@ -61,7 +62,7 @@ func ConnAddEv(p int32, h server.Host) {
     fmt.Printf("Connected %s:%d on Port %d\n", 
                h.RemoteIP, 
                h.RemotePort, 
-               h.LocalPort)
+               h.ListenPort)
     
 }
 
@@ -70,7 +71,7 @@ func ConnRemoveEv(p int32, h server.Host) {
     fmt.Printf("Removed %s:%d from Port %d\n", 
                h.RemoteIP, 
                h.RemotePort, 
-               h.LocalPort)
+               h.ListenPort)
 }
 
 
@@ -94,7 +95,9 @@ func main() {
     // Server mode options
 //    public := flag.String("pub", "", "Public Key File valid only in Server mode")
     serverArg := flag.Bool("s", false, "Run as Server")
-//    username := flag.String("u", "", "Username for Server")
+    username := flag.String("u", "", "Username for Server")
+    uid := flag.Int("uid", -1, "User ID")
+    mode := flag.Int("mode", -2, "User Create mode")
 
     tnl := flag.Bool("t", false, "Tunnel command used as SSH Force Command")
 
@@ -104,7 +107,7 @@ func main() {
     
     if (*clientArg != "") {
         port := tail[0]
-        user, hostname, err := parsePath(*client)
+        user, hostname, err := parsePath(*clientArg)
         check(err)
         
         cmd, err := client.Start(*private, user, hostname, port)
@@ -113,9 +116,25 @@ func main() {
         blockForever()
         
     } else if (*serverArg == true) {
-        m = omap.New()
-        u := user.NewUserWithPassword("tr", "1234567890")
+        fmt.Println(os.Args)
+        if (*username == "") {
+            u := user.NewUserWithPassword("tr", "1234567890")
+            
+            args := make([]string, len(os.Args) + 6)
+            copy(args, os.Args)
+            args[len(os.Args)]     = "-u"
+            args[len(os.Args) + 1] = u.Name
+            args[len(os.Args) + 2] = "-uid"
+            args[len(os.Args) + 3] = strconv.Itoa(u.Uid)
+            args[len(os.Args) + 4] = "-mode"
+            args[len(os.Args) + 5] = strconv.Itoa(u.Mode)
+            
+            syscall.Exec(os.Args[0], args, os.Environ())
+        }
         
+        u := &user.User{Name: *username, Uid: *uid, Mode: *mode}
+        
+        m = omap.New()
         server.Monitor(u.Uid, ConnAddEv, ConnRemoveEv)
 
         l, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)

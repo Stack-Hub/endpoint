@@ -5,14 +5,13 @@ import (
     "regexp"
     "encoding/json"
     "os"
+    "os/exec"
     "strconv"
     "bytes"
     "io"
-    "syscall"
-    
-    "github.com/mindreframer/golang-stuff/github.com/jondot/gosigar/psnotify"
-    ps "github.com/shirou/gopsutil/process"
-
+    "net"
+    "log"
+    "bufio"
 )
 
 type Config struct {
@@ -20,66 +19,31 @@ type Config struct {
 }
 
 type Host struct {
-    LocalPort  int32  `json:"lport"`
-    RemoteIP   string `json:"raddr"`
-    RemotePort int32  `json:"rport"`
-    Config     Config `json:"config"`
-    Uid        int    `json:"uid"`
+    ListenPort  int32  `json:"lisport"`
+    RemoteIP    string `json:"raddr"`
+    RemotePort  uint32  `json:"rport"`
+    ServicePort int32  `json:"sport"`
+    Config      Config `json:"config"`
+    Uid         int    `json:"uid"`
+    Pid         int32  `json:"pid"`
 }
 
 var connections map[int32]*Host
 var processing map[int32]bool
 
+func check(e error) {
+    if e != nil {
+        fmt.Fprintln(os.Stderr, e)
+        panic(e)
+    }
+}
+
 
 type ConnAddedEvent   func(p int32, h Host)
 type ConnRemovedEvent func(p int32, h Host)
  
-func AddConnection(ev * psnotify.ProcEventExec, uid int, a ConnAddedEvent) {
-    pid := int32(ev.Pid)
-    
-    _, ok := processing[pid]
-    if !ok {
-        processing[pid] = true
-    
-        //Declare host to store connection information
-        var host Host
-
-        tunnelProc, _ := ps.NewProcess(pid)
-        tunnelCmdline, _ := tunnelProc.CmdlineSlice()
-
-        if len(tunnelCmdline) > 0 {
-            procName := "/usr/sbin/trafficrouter"
-            matched, _ := regexp.MatchString(procName, tunnelCmdline[0])
-            if matched {
-                //Send AddedEvent Callback.
-                connections[pid] = &host
-
-                fmt.Println("Detected", tunnelCmdline, pid)
-
-                namedPipe := "/tmp/" + strconv.Itoa(int(pid))
-                syscall.Mkfifo(namedPipe, 0600)
-                stdout, _ := os.OpenFile(namedPipe, os.O_RDONLY, 0600)
-                var buff bytes.Buffer
-                io.Copy(&buff, stdout)
-                stdout.Close()
-                fmt.Printf("Payload: %s\n", buff.String())
-
-                if err := json.Unmarshal(buff.Bytes(), &host); err != nil {
-                        panic(err)
-                }
-
-                fmt.Println("Host: ", host)
-
-                a(pid, host)
-
-            }
-        }
-    }
-    delete(processing, pid)
-}
-
-func RemoveConnection(ev * psnotify.ProcEventExit, r ConnRemovedEvent) {
-    pid := int32(ev.Pid)
+func RemoveConnection(h *Host, r ConnRemovedEvent) {
+    pid := h.Pid
     
     h, ok := connections[pid]
     if ok {
@@ -89,53 +53,79 @@ func RemoveConnection(ev * psnotify.ProcEventExit, r ConnRemovedEvent) {
     }
 }
 
-func handleEvents(uid int, pid int, a ConnAddedEvent, r ConnRemovedEvent) {
+func conntrack(h *Host, r ConnRemovedEvent) {
+    // Delete user
+	cmdName := "conntrack"
+	cmdArgs := []string{"-E", "-e", "UPDATE", "-p", "tcp", "--state", "FIN_WAIT", "--orig-port-src", strconv.Itoa(int(h.RemotePort)), "--orig-src", h.RemoteIP}
+    
+    cmd := exec.Command(cmdName, cmdArgs...)
 
-    // New Process Watcher. 
-    watcher, err := psnotify.NewWatcher()
-    if err != nil {
-        panic(err)
-    }
+    stdout, err := cmd.StdoutPipe()
+    check(err)
 
-    // Process fork, exec, exit & error events
-    go func() {
-        for {
-            select {
-            case ev := <-watcher.Exec:
-                go AddConnection(ev, uid, a)
-            case ev := <-watcher.Exit:
-                go RemoveConnection(ev, r)
+    scanner := bufio.NewScanner(stdout)
+	go func() {
+        mstr := ` \[UPDATE\] tcp      .* .* FIN_WAIT src=.* dst=.* sport=%d dport=.* src=%s dst=.* sport=.* dport=.*`
+        mstr = fmt.Sprintf(mstr, h.RemotePort, h.RemoteIP)
+        fmt.Println(mstr)
+        
+		for scanner.Scan() {
+            ev := scanner.Text()
+            fmt.Println(ev)
+            matched, _ := regexp.MatchString(mstr, ev)
+            if matched {    
+                RemoveConnection(h, r)
+                cmd.Process.Kill()
             }
-        }
-    }()
-
-    // Process fork, exec, exit & error events
-    err = watcher.Watch(pid, psnotify.PROC_EVENT_EXEC | psnotify.PROC_EVENT_EXIT)
-    if err != nil {
-        fmt.Println(err)
+		}
+	}()
+    
+    
+    if err = cmd.Start(); err != nil { //Use start, not run
+        check(err)
     }
+
+    _ = cmd.Wait()
+}
+
+func handleEvents(c net.Conn, uid int, pid int, a ConnAddedEvent, r ConnRemovedEvent) {
+    //Declare host to store connection information
+    var host Host
+    var buff bytes.Buffer
+    io.Copy(&buff, c)
+    c.Close()
+    fmt.Printf("Payload: %s\n", buff.String())
+
+    if err := json.Unmarshal(buff.Bytes(), &host); err != nil {
+            panic(err)
+    }
+
+    fmt.Println("Host: ", host)
+
+    //Send AddedEvent Callback.
+    connections[host.Pid] = &host
+    a(host.Pid, host)
+    
+    conntrack(&host, r)
 }
 
 func Monitor(uid int, a ConnAddedEvent, r ConnRemovedEvent) {
-    
     connections = make(map[int32]*Host)
     processing  = make(map[int32]bool)
     
     // Get the list of all Pids in the system 
     // and search for sshd process.
-    pids, _ := ps.Pids()
-    for pid := range pids  {
-        proc, _ := ps.NewProcess(pids[pid])
-        cmdline, _ := proc.CmdlineSlice()
+    p := os.Getpid()
+    f := "/tmp/" + strconv.Itoa(p) + ".sock"
+    l, _ := net.Listen("unix", f)
+    fmt.Printf("Waiting for Connections\n")
 
-        if len(cmdline) > 0 {
-            // For each sshd process Handle fork, exec & exit 
-            // events for all child processes.
-            matched, _ := regexp.MatchString(`/usr/sbin/sshd`, cmdline[0])
-            if matched {    
-                fmt.Printf("Monitoring %d for Connections\n", pids[pid])
-                handleEvents(uid, int(pids[pid]), a, r)
-            }            
-        }
-    }
+    for {
+		fd, err := l.Accept()
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		go handleEvents(fd, uid, 1, a, r)
+	}    
 }

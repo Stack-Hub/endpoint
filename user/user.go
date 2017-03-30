@@ -27,7 +27,7 @@ Match User %s
     AllowTCPForwarding yes
     X11Forwarding no
     AllowAgentForwarding no
-    PermitTTY no
+    PermitTTY yes
     ForceCommand /usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND
 `
 
@@ -36,7 +36,7 @@ Match User %s
 type User struct {
     Name string
     Uid  int
-    mode int
+    Mode int
 }
 
 func check(e error) {
@@ -117,7 +117,7 @@ func (u *User) Delete() error {
     out, err := exec.Command(cmdName, cmdArgs...).Output()
     fmt.Println(string(out))
     
-    if (u.mode == PASSWD) {
+    if (u.Mode == PASSWD) {
         removeUserSSHDConfig(SSHD_CONFIG, u.Name)
         restartSSHServer()
     }

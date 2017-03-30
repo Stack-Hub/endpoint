@@ -71,14 +71,16 @@ func openTunnel(username string, passwd string, p int, mode int) (*exec.Cmd, err
     
     if mode == PASSWD {
         cmdName = "sshpass"
-        cmdArgs = []string{"-p", passwd, "ssh", "-q", "-T", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}        
+        cmdArgs = []string{"-p", passwd, "ssh", "-q", "-t", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}        
     } else {
         cmdName = "ssh"
-        cmdArgs = []string{"-i", PRIVKEYFILE, "-q", "-T", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}                
+        cmdArgs = []string{"-i", PRIVKEYFILE, "-q", "-t", "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@localhost", "{\"port\":" + port + "}"}                
     }
     
     fmt.Println(cmdName, cmdArgs)
 	cmd := exec.Command(cmdName, cmdArgs...)
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
     
     err := cmd.Start()
 	if err != nil {
@@ -110,8 +112,7 @@ func TestSingleUserConnectionsWithPasswd(t *testing.T) {
                    h.LocalPort)
 
         cmd[h.RemotePort].Process.Kill()
-        state, err := cmd[h.RemotePort].Process.Wait()
-        fmt.println(state, err)
+        cmd[h.RemotePort].Process.Wait()
     }
 
     ConnRemoveEv := func(p int32, h Host) {
@@ -153,6 +154,7 @@ func TestMultipleUserConnectionsWithPasswd(t *testing.T) {
                        h.LocalPort)
 
             cmd[i][h.RemotePort].Process.Kill()
+            cmd[i][h.RemotePort].Process.Wait()
         }
 
         ConnRemoveEv := func(p int32, h Host) {
@@ -202,6 +204,7 @@ func TestSingleUserConnectionsWithKey(t *testing.T) {
                    h.LocalPort)
 
         cmd[h.RemotePort].Process.Kill()
+        cmd[h.RemotePort].Process.Wait()
     }
 
     ConnRemoveEv := func(p int32, h Host) {
