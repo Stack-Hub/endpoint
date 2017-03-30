@@ -1,4 +1,4 @@
-package connmonitor
+package server
 
 import (
     "fmt"

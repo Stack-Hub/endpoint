@@ -1,4 +1,4 @@
-package connmonitor
+package server
 
 import (
     "testing"
@@ -110,6 +110,8 @@ func TestSingleUserConnectionsWithPasswd(t *testing.T) {
                    h.LocalPort)
 
         cmd[h.RemotePort].Process.Kill()
+        state, err := cmd[h.RemotePort].Process.Wait()
+        fmt.println(state, err)
     }
 
     ConnRemoveEv := func(p int32, h Host) {

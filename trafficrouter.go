@@ -11,11 +11,11 @@ import (
     "errors"
     "runtime"
     
-    ssh "./connmonitor" 
     "./omap"
-    "./reverse_tunnel"
-    "./tunnel"
+    "./client"
+    "./forcecmd"
     "./user"
+    "./server"
 )
 
 const (
@@ -48,7 +48,7 @@ func handleRequest(in net.Conn) {
         // Send a response back to person contacting us.
         in.Write([]byte("No Routes available."))   
     } else {
-        port := strconv.Itoa(int(h.Value.(ssh.Host).LocalPort))
+        port := strconv.Itoa(int(h.Value.(server.Host).LocalPort))
         out, _ := net.Dial("tcp", "127.0.0.1:" + port)
         go io.Copy(out, in)
         io.Copy(in, out)
@@ -56,7 +56,7 @@ func handleRequest(in net.Conn) {
     }
 }
 
-func ConnAddEv(p int32, h ssh.Host) {
+func ConnAddEv(p int32, h server.Host) {
     m.Add(p, h)
     fmt.Printf("Connected %s:%d on Port %d\n", 
                h.RemoteIP, 
@@ -65,7 +65,7 @@ func ConnAddEv(p int32, h ssh.Host) {
     
 }
 
-func ConnRemoveEv(p int32, h ssh.Host) {
+func ConnRemoveEv(p int32, h server.Host) {
     m.Remove(p)
     fmt.Printf("Removed %s:%d from Port %d\n", 
                h.RemoteIP, 
@@ -89,11 +89,11 @@ func main() {
     // Command line options
     // Client mode options
     private := flag.String("priv", "", "Private Key File valid only in Client mode")
-    client := flag.String("c", "", "Server Address in user@host Format")
+    clientArg := flag.String("c", "", "Server Address in user@host Format")
 
     // Server mode options
 //    public := flag.String("pub", "", "Public Key File valid only in Server mode")
-    server := flag.Bool("s", false, "Run as Server")
+    serverArg := flag.Bool("s", false, "Run as Server")
 //    username := flag.String("u", "", "Username for Server")
 
     tnl := flag.Bool("t", false, "Tunnel command used as SSH Force Command")
@@ -102,21 +102,21 @@ func main() {
     flag.Parse()
     tail := flag.Args()  
     
-    if (*client != "") {
+    if (*clientArg != "") {
         port := tail[0]
         user, hostname, err := parsePath(*client)
         check(err)
         
-        cmd, err := reverse_tunnel.Start(*private, user, hostname, port)
-        defer reverse_tunnel.Stop(cmd)
+        cmd, err := client.Start(*private, user, hostname, port)
+        defer client.Stop(cmd)
         fmt.Println(cmd)
         blockForever()
         
-    } else if (*server == true) {
+    } else if (*serverArg == true) {
         m = omap.New()
         u := user.NewUserWithPassword("tr", "1234567890")
         
-        ssh.Monitor(u.Uid, ConnAddEv, ConnRemoveEv)
+        server.Monitor(u.Uid, ConnAddEv, ConnRemoveEv)
 
         l, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
         if err != nil {
@@ -138,7 +138,7 @@ func main() {
             go handleRequest(conn)
         }    
     } else if (*tnl == true) {
-        tunnel.SendConfig()
+        forcecmd.SendConfig()
     }
 
 }

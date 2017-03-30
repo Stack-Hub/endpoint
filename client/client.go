@@ -1,4 +1,4 @@
-package reverse_tunnel
+package client
 
 import (
 	"fmt"
