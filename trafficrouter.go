@@ -129,7 +129,9 @@ func main() {
             args[len(os.Args) + 4] = "-mode"
             args[len(os.Args) + 5] = strconv.Itoa(u.Mode)
             
-            syscall.Exec(os.Args[0], args, os.Environ())
+            fmt.Println("Swamping new exec")
+            err := syscall.Exec("/usr/sbin/" + os.Args[0], args, os.Environ())
+            fmt.Println("Swamped", err)
         }
         
         u := &user.User{Name: *username, Uid: *uid, Mode: *mode}

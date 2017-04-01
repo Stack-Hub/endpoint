@@ -8,8 +8,8 @@ import (
     "strconv"
     "net"
     "log"
-    
-    "github.com/mindreframer/golang-stuff/github.com/jondot/gosigar/psnotify"
+    "runtime"
+
     netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
 )
@@ -28,43 +28,30 @@ type Host struct {
     Pid         int32  `json:"pid"`
 }
 
-func waitForPPidExit(ppid int) {
-    watcher, err := psnotify.NewWatcher()
-    if err != nil {
-        fmt.Println(err)
+func blockForever() {
+    for {
+        runtime.Gosched()
     }
-
-    err = watcher.Watch(ppid, psnotify.PROC_EVENT_EXIT)
-    if err != nil {
-        fmt.Println(err)
-    }
-
-    for ;; {
-        ev := <-watcher.Exit
-        fmt.Println("Parent Died ", ev)
-        if (ev.Pid == ppid) {
-            os.Exit(0)            
-        }
-    }
-
-    
 }
 
 func SendConfig() {
     ppid := int32(os.Getppid())
     fmt.Println("ppid = ", ppid)
-    pid  := os.Getpid()
     
     pproc, _ := ps.NewProcess(ppid)
-    pcmdline, _ := pproc.CmdlineSlice()
-    fmt.Println("Parent Process cmdline = ", pcmdline)
+
+    //Get SSH Proc PID
+    spid, _ := pproc.Ppid()
+    sproc, _ := ps.NewProcess(spid)
+    scmdline, _ := sproc.CmdlineSlice()
+    fmt.Println("Parent Process cmdline = ", scmdline)
     
-    conns, _ := netutil.ConnectionsPid("inet", ppid)
+    conns, _ := netutil.ConnectionsPid("inet", spid)
     fmt.Println(conns)
 
     //Declare host to store connection information
     var host Host
-    host.Pid = int32(pid)
+    host.Pid = int32(ppid)
 
     for conn := range conns {
         if conns[conn].Family == 2 && conns[conn].Status == "LISTEN" {
@@ -116,13 +103,13 @@ func SendConfig() {
 
                 if err != nil {
                     log.Println(err)
-                }            
+                }        
                 
                 c.Close()
             }            
         }
     }
     
-    waitForPPidExit(int(ppid))
+    blockForever()
 
 }

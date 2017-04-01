@@ -88,6 +88,21 @@ func conntrack(h *Host, r ConnRemovedEvent) {
     _ = cmd.Wait()
 }
 
+func waitForClose(pid int) bool {
+    // Add user
+	cmdName := "flock"
+    cmdArgs := []string{"/tmp/" + strconv.Itoa(pid), "-c", "echo done"}
+    
+    out, err := exec.Command(cmdName, cmdArgs...).Output()
+    if err != nil {
+        return false
+    }
+    fmt.Println(out)
+    
+    return true
+}
+
+
 func handleEvents(c net.Conn, uid int, pid int, a ConnAddedEvent, r ConnRemovedEvent) {
     //Declare host to store connection information
     var host Host
@@ -106,7 +121,9 @@ func handleEvents(c net.Conn, uid int, pid int, a ConnAddedEvent, r ConnRemovedE
     connections[host.Pid] = &host
     a(host.Pid, host)
     
-    conntrack(&host, r)
+    if waitForClose(int(host.Pid)) == true {
+        RemoveConnection(&host, r)
+    }
 }
 
 func Monitor(uid int, a ConnAddedEvent, r ConnRemovedEvent) {

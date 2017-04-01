@@ -28,7 +28,7 @@ Match User %s
     X11Forwarding no
     AllowAgentForwarding no
     PermitTTY yes
-    ForceCommand /usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND
+    ForceCommand flock /tmp/$$ -c "/usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND"
 `
 
 )
@@ -293,7 +293,7 @@ func parsePath(path string) (string, string, error) {
 * Add authorized key for the user with force command.
 */
 func allowKeyAccess(username string, keyFile string) {
-    forceCommand := `command="/usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
+    forceCommand := `command="flock /tmp/$$ -c \"/usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND\",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
     
     // Make home Directory path
     homeDir := "/home/" + username 
