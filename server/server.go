@@ -2,7 +2,6 @@ package server
 
 import (
     "fmt"
-    "regexp"
     "encoding/json"
     "os"
     "os/exec"
@@ -11,7 +10,8 @@ import (
     "io"
     "net"
     "log"
-    "bufio"
+    
+    "../config"
 )
 
 type Config struct {
@@ -53,45 +53,11 @@ func RemoveConnection(h *Host, r ConnRemovedEvent) {
     }
 }
 
-func conntrack(h *Host, r ConnRemovedEvent) {
-    // Delete user
-	cmdName := "conntrack"
-	cmdArgs := []string{"-E", "-e", "UPDATE", "-p", "tcp", "--state", "FIN_WAIT", "--orig-port-src", strconv.Itoa(int(h.RemotePort)), "--orig-src", h.RemoteIP}
-    
-    cmd := exec.Command(cmdName, cmdArgs...)
-
-    stdout, err := cmd.StdoutPipe()
-    check(err)
-
-    scanner := bufio.NewScanner(stdout)
-	go func() {
-        mstr := ` \[UPDATE\] tcp      .* .* FIN_WAIT src=.* dst=.* sport=%d dport=.* src=%s dst=.* sport=.* dport=.*`
-        mstr = fmt.Sprintf(mstr, h.RemotePort, h.RemoteIP)
-        fmt.Println(mstr)
-        
-		for scanner.Scan() {
-            ev := scanner.Text()
-            fmt.Println(ev)
-            matched, _ := regexp.MatchString(mstr, ev)
-            if matched {    
-                RemoveConnection(h, r)
-                cmd.Process.Kill()
-            }
-		}
-	}()
-    
-    
-    if err = cmd.Start(); err != nil { //Use start, not run
-        check(err)
-    }
-
-    _ = cmd.Wait()
-}
 
 func waitForClose(pid int) bool {
     // Add user
 	cmdName := "flock"
-    cmdArgs := []string{"/tmp/" + strconv.Itoa(pid), "-c", "echo done"}
+    cmdArgs := []string{config.RUNPATH + strconv.Itoa(pid), "-c", "echo done"}
     
     out, err := exec.Command(cmdName, cmdArgs...).Output()
     if err != nil {
@@ -133,7 +99,7 @@ func Monitor(uid int, a ConnAddedEvent, r ConnRemovedEvent) {
     // Get the list of all Pids in the system 
     // and search for sshd process.
     p := os.Getpid()
-    f := "/tmp/" + strconv.Itoa(p) + ".sock"
+    f := config.RUNPATH + strconv.Itoa(p) + ".sock"
     l, _ := net.Listen("unix", f)
     fmt.Printf("Waiting for Connections\n")
 

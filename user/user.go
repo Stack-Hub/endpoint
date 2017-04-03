@@ -16,21 +16,13 @@ import (
     "io/ioutil"
     "strconv"
     "strings"
+    
+    "../config"
 )
 
 const (
     PASSWD      = 0
     KEY         = 1
-    SSHD_CONFIG = "/etc/ssh/sshd_config" 
-    MATCHBLK    = `
-Match User %s
-    AllowTCPForwarding yes
-    X11Forwarding no
-    AllowAgentForwarding no
-    PermitTTY yes
-    ForceCommand flock /tmp/$$ -c "/usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND"
-`
-
 )
 
 type User struct {
@@ -71,7 +63,7 @@ func NewUserWithPassword(prefix string, pass string) *User {
     }()
     
     setUserPasswd(username, pass)
-    addUserSSHDConfig(SSHD_CONFIG, username)
+    addUserSSHDConfig(config.SSHD_CONFIG, username)
     restartSSHServer()
     
     return u
@@ -118,7 +110,7 @@ func (u *User) Delete() error {
     fmt.Println(string(out))
     
     if (u.Mode == PASSWD) {
-        removeUserSSHDConfig(SSHD_CONFIG, u.Name)
+        removeUserSSHDConfig(config.SSHD_CONFIG, u.Name)
         restartSSHServer()
     }
     return err
@@ -131,7 +123,7 @@ func (u *User) Delete() error {
  * username: Username for Match block.
  */
 func addUserSSHDConfig(path, username string) error {    
-      matchBlkStr := fmt.Sprintf(MATCHBLK, username)
+      matchBlkStr := fmt.Sprintf(config.MATCHBLK, username)
 
       f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
       check(err)
@@ -150,7 +142,7 @@ func addUserSSHDConfig(path, username string) error {
  * username: Username for Match block.
  */
 func removeUserSSHDConfig(path, username string) error {    
-      matchBlkStr := fmt.Sprintf(MATCHBLK, username)
+      matchBlkStr := fmt.Sprintf(config.MATCHBLK, username)
 
       input, err := ioutil.ReadFile(path)
       if err != nil {

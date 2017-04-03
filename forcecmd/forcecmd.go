@@ -10,6 +10,7 @@ import (
     "log"
     "runtime"
 
+    "../config"
     netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
 )
@@ -67,10 +68,10 @@ func SendConfig() {
 
     configstr := os.Args[len(os.Args) - 1]
     fmt.Println(configstr)
-    config := Config{}
-    json.Unmarshal([]byte(configstr), &config)
-    host.ServicePort = config.Port                
-    host.Config = config
+    cfg := Config{}
+    json.Unmarshal([]byte(configstr), &cfg)
+    host.ServicePort = cfg.Port                
+    host.Config = cfg
     host.Uid = os.Getuid()
     
     fmt.Println(host)
@@ -90,7 +91,7 @@ func SendConfig() {
             if matched {    
                 fmt.Println(cmdline)
                 fmt.Printf("Found Server Process %d\n", pids[pid])
-                f := "/tmp/" + strconv.Itoa(int(pids[pid])) + ".sock"
+                f := config.RUNPATH + strconv.Itoa(int(pids[pid])) + ".sock"
                 log.Println("Sending data to ", f)
                 c, err := net.Dial("unix", f)
 

@@ -17,12 +17,7 @@ import (
     "./forcecmd"
     "./user"
     "./server"
-)
-
-const (
-    SERVER_HOST = "0.0.0.0"
-    SERVER_PORT = "80"
-    SERVER_TYPE = "tcp"
+    "./config"
 )
 
 var m * omap.OMap
@@ -139,7 +134,7 @@ func main() {
         m = omap.New()
         server.Monitor(u.Uid, ConnAddEv, ConnRemoveEv)
 
-        l, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
+        l, err := net.Listen(config.SERVER_TYPE, config.SERVER_HOST+":"+config.SERVER_PORT)
         if err != nil {
             fmt.Println("Error listening:", err.Error())
             os.Exit(1)
@@ -147,7 +142,7 @@ func main() {
         // Close the listener when the application closes.
         defer l.Close()
 
-        fmt.Println("Listening on " + SERVER_HOST + ":" + SERVER_PORT)
+        fmt.Println("Listening on " + config.SERVER_HOST + ":" + config.SERVER_PORT)
         for {
             // Listen for an incoming connection.
             conn, err := l.Accept()
