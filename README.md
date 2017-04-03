@@ -1,0 +1,1 @@
+tafficrouter is zero-config push based load balancer. It aims to eliminate the need of service discovery and health monitoring in microservice infrastructure. This project is under heavy development, please don't use it until official version is release.
