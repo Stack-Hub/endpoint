@@ -1,7 +1,20 @@
+/* Copyright 2017, Ashish Thakwani. 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.LICENSE file.
+ */
 package server
 
 import (
-    "fmt"
+    "log"
     "encoding/json"
     "os"
     "os/exec"
@@ -9,106 +22,109 @@ import (
     "bytes"
     "io"
     "net"
-    "log"
+    "fmt"
     
     "../config"
 )
 
-type Config struct {
-    Port int32  `json:"port"`
-}
+/*
+ *  Map for holding active connections.
+ */
+var conns map[uint16]*config.Host
 
-type Host struct {
-    ListenPort  int32  `json:"lisport"`
-    RemoteIP    string `json:"raddr"`
-    RemotePort  uint32  `json:"rport"`
-    ServicePort int32  `json:"sport"`
-    Config      Config `json:"config"`
-    Uid         int    `json:"uid"`
-    Pid         int32  `json:"pid"`
-}
-
-var connections map[int32]*Host
-var processing map[int32]bool
-
-func check(e error) {
-    if e != nil {
-        fmt.Fprintln(os.Stderr, e)
-        panic(e)
-    }
-}
-
-
-type ConnAddedEvent   func(p int32, h Host)
-type ConnRemovedEvent func(p int32, h Host)
+/*
+ *  Event callback for connection add & remove.
+ */
+type ConnAddedEvent   func(p uint16, h config.Host)
+type ConnRemovedEvent func(p uint16, h config.Host)
  
-func RemoveConnection(h *Host, r ConnRemovedEvent) {
-    pid := h.Pid
+
+/*
+ *  Add connection to map and invoke callback.
+ */
+func addConnection(h *config.Host, a ConnAddedEvent) {
+    p := h.Pid
     
-    h, ok := connections[pid]
+    conns[p] = h
+
+    //Send AddedEvent Callback.
+    a(p, h)
+}
+
+/*
+ *  Remove connection from map and invoke callback.
+ */
+func removeConnection(h *config.Host, r ConnRemovedEvent) {
+    p := h.Pid
+    
+    h, ok := conns[p]
     if ok {
-        delete(connections, pid)
+        delete(conns, p)
+        
         //Send RemoveEvent Callback
-        r(pid, *h)
+        r(p, *h)
     }
 }
 
 
-func waitForClose(pid int) bool {
+/*
+ *  Wait for lock file to be released.
+ */
+func waitForClose(p int) bool {
     // Add user
-	cmdName := "flock"
-    cmdArgs := []string{config.RUNPATH + strconv.Itoa(pid), "-c", "echo done"}
+	cmd := "flock"
+    args := []string{config.RUNPATH + strconv.Itoa(p), "-c", "echo done"}
     
-    out, err := exec.Command(cmdName, cmdArgs...).Output()
+    out, err := exec.Command(cmd, args...).Output()
     if err != nil {
         return false
     }
-    fmt.Println(out)
     
     return true
 }
 
-
-func handleEvents(c net.Conn, uid int, pid int, a ConnAddedEvent, r ConnRemovedEvent) {
-    //Declare host to store connection information
-    var host Host
-    var buff bytes.Buffer
-    io.Copy(&buff, c)
-    c.Close()
-    fmt.Printf("Payload: %s\n", buff.String())
-
-    if err := json.Unmarshal(buff.Bytes(), &host); err != nil {
-            panic(err)
-    }
-
-    fmt.Println("Host: ", host)
-
-    //Send AddedEvent Callback.
-    connections[host.Pid] = &host
-    a(host.Pid, host)
+/*
+ *  Handle Socket connection
+ */
+func handleClient(c net.Conn, a ConnAddedEvent, r ConnRemovedEvent) {
+    var h config.Host
+    var b bytes.Buffer
     
-    if waitForClose(int(host.Pid)) == true {
-        RemoveConnection(&host, r)
+    // Copy socket data to buffer
+    io.Copy(&b, c)
+    c.Close()
+    
+    log.Printf("Payload: %s\n", b.String())
+
+    err := json.Unmarshal(b.Bytes(), &h) 
+    utils.Check(err)
+    
+    addConnection(&h, a)
+    
+    if waitForClose(int(h.Pid)) == true {
+        removeConnection(&h, r)
     }
 }
 
-func Monitor(uid int, a ConnAddedEvent, r ConnRemovedEvent) {
-    connections = make(map[int32]*Host)
-    processing  = make(map[int32]bool)
+/*
+ *  Monitor incoming connections and invoke callback
+ *  when client is added or removed.
+ */
+func Monitor(a ConnAddedEvent, r ConnRemovedEvent) {
+    // Initialize connections map to store active connections.
+    conns = make(map[uint16]*config.Host)
     
-    // Get the list of all Pids in the system 
-    // and search for sshd process.
+    // Get process pid and open unix socket.
     p := os.Getpid()
     f := config.RUNPATH + strconv.Itoa(p) + ".sock"
     l, _ := net.Listen("unix", f)
     fmt.Printf("Waiting for Connections\n")
 
     for {
+        // Handle incoming conection.
 		fd, err := l.Accept()
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-		go handleEvents(fd, uid, 1, a, r)
+        utils.Check(err)
+        
+		go handleClient(fd, a, r)
 	}    
 }
