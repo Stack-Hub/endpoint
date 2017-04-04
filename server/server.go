@@ -24,25 +24,25 @@ import (
     "net"
     "fmt"
     
-    "../config"
+    "../utils"
 )
 
 /*
  *  Map for holding active connections.
  */
-var conns map[uint16]*config.Host
+var conns map[int]*utils.Host
 
 /*
  *  Event callback for connection add & remove.
  */
-type ConnAddedEvent   func(p uint16, h config.Host)
-type ConnRemovedEvent func(p uint16, h config.Host)
+type ConnAddedEvent   func(p int, h *utils.Host)
+type ConnRemovedEvent func(p int, h *utils.Host)
  
 
 /*
  *  Add connection to map and invoke callback.
  */
-func addConnection(h *config.Host, a ConnAddedEvent) {
+func addConnection(h *utils.Host, a ConnAddedEvent) {
     p := h.Pid
     
     conns[p] = h
@@ -54,7 +54,7 @@ func addConnection(h *config.Host, a ConnAddedEvent) {
 /*
  *  Remove connection from map and invoke callback.
  */
-func removeConnection(h *config.Host, r ConnRemovedEvent) {
+func removeConnection(h *utils.Host, r ConnRemovedEvent) {
     p := h.Pid
     
     h, ok := conns[p]
@@ -62,7 +62,7 @@ func removeConnection(h *config.Host, r ConnRemovedEvent) {
         delete(conns, p)
         
         //Send RemoveEvent Callback
-        r(p, *h)
+        r(p, h)
     }
 }
 
@@ -73,9 +73,9 @@ func removeConnection(h *config.Host, r ConnRemovedEvent) {
 func waitForClose(p int) bool {
     // Add user
 	cmd := "flock"
-    args := []string{config.RUNPATH + strconv.Itoa(p), "-c", "echo done"}
+    args := []string{utils.RUNPATH + strconv.Itoa(p), "-c", "echo done"}
     
-    out, err := exec.Command(cmd, args...).Output()
+    _, err := exec.Command(cmd, args...).Output()
     if err != nil {
         return false
     }
@@ -87,7 +87,7 @@ func waitForClose(p int) bool {
  *  Handle Socket connection
  */
 func handleClient(c net.Conn, a ConnAddedEvent, r ConnRemovedEvent) {
-    var h config.Host
+    var h utils.Host
     var b bytes.Buffer
     
     // Copy socket data to buffer
@@ -112,19 +112,22 @@ func handleClient(c net.Conn, a ConnAddedEvent, r ConnRemovedEvent) {
  */
 func Monitor(a ConnAddedEvent, r ConnRemovedEvent) {
     // Initialize connections map to store active connections.
-    conns = make(map[uint16]*config.Host)
+    conns = make(map[int]*utils.Host)
     
     // Get process pid and open unix socket.
     p := os.Getpid()
-    f := config.RUNPATH + strconv.Itoa(p) + ".sock"
+    f := utils.RUNPATH + strconv.Itoa(p) + ".sock"
+    
     l, _ := net.Listen("unix", f)
     fmt.Printf("Waiting for Connections\n")
 
     for {
         // Handle incoming conection.
-		fd, err := l.Accept()
+        fd, err := l.Accept()
         utils.Check(err)
-        
-		go handleClient(fd, a, r)
-	}    
+
+        go handleClient(fd, a, r)
+    }
+    
+
 }

@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.LICENSE file.
  *
- *
+*
  * User package to add and remove linux user with ForceCommand
  * 
  * Supports both password based & key based user authenticaion.
@@ -30,7 +30,7 @@ import (
     "strconv"
     "strings"
     
-    "../config"
+    "../utils"
 )
 
 const (

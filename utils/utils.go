@@ -11,7 +11,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.LICENSE file.
  */
-package config
+package utils
+
+import (
+    "fmt"
+    "os"
+)
 
 /*
  *  Default configurations
@@ -47,7 +52,7 @@ type Host struct {
     ListenPort  uint16 `json:"lisport"`
     RemoteIP    string `json:"raddr"`
     RemotePort  uint16 `json:"rport"`
-    ServicePort uint16 `json:"sport"`
+    AppPort     uint16 `json:"aport"`
     Config      Config `json:"config"`
     Uid         int    `json:"uid"`
     Pid         int    `json:"pid"`
@@ -57,7 +62,7 @@ type Host struct {
 /*
  *  Common error handling function.
  */
-func check(e error) {
+func Check(e error) {
     if e != nil {
         fmt.Fprintln(os.Stderr, e)
         panic(e)

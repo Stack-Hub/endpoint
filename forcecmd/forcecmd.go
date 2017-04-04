@@ -66,7 +66,7 @@ func getConnParams(pid int32, h *Host) {
         // Family = 2 indicates IPv4 socket. Store Listen Port
         // in host structure.
         if c.Family == 2 && c.Status == "LISTEN" {
-            h.ListenPort = int32(conn.Laddr.Port)
+            h.ListenPort = int32(c.Laddr.Port)
         }
 
         // Store Established connection IP & Port in host structure.
@@ -92,7 +92,7 @@ func getConfigParams(h *Host) {
     json.Unmarshal([]byte(cfgstr), &cfg)
     
     // Update and log host var
-    h.ServicePort = cfg.Port                
+    h.AppPort = cfg.Port                
     h.Config = cfg
     h.Uid = os.Getuid()
     
