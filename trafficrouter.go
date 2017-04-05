@@ -186,7 +186,7 @@ func main() {
     } else if (*srv == true) {
         if (*usr == "") {
             passwd := RandStringRunes(10)
-            u := user.NewUserWithPassword(utils.DEFAULTUNAME, passwd)
+            u := user.NewUserWithPassword(utils.DEFAULT_USER_PREFIX, passwd)
 
             // Generate token for client.
             fmt.Printf("Sever token - %s/%s@%s:%d\n", u.Name, passwd, externalIP(), *port)

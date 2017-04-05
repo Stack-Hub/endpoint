@@ -21,11 +21,38 @@ import (
     "strconv"
     "net"
     "log"
+    "os/signal"
+    "syscall"
 
     "../utils"
+    "golang.org/x/sys/unix"
     netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
+    
 )
+
+/*
+ * Wait for parent to exit.
+ */
+func waitForExit(fd int) {
+
+    sigs := make(chan os.Signal, 1)    
+    signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+    
+    go func() {
+        sig := <-sigs
+        fmt.Println(sig)
+        utils.UnlockFile(fd)
+        os.Exit(1)
+    }()
+
+    flag := unix.SIGHUP
+    if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(flag), 0, 0, 0); err != nil {
+        return
+    }
+    
+    utils.BlockForever()
+}
 
 /*
  *  Get Parent process's pid and commandline.
@@ -142,25 +169,20 @@ func SendConfig() {
     // Get parent proc ID which will be flock's pid.
     ppid := os.Getppid()
     log.Println("ppid = ", ppid)
+
+    // Flock on pid file
+    fd := utils.LockFile(ppid)
     
     // Get parent process params
-    pproc, pcmd := getProcParam(int32(ppid))
-    log.Println("Parent Process cmdline = ", pcmd)
-
-    // Get SSH process ID
-    spid, err := pproc.Ppid()
-    utils.Check(err)
-
-    // Get SSH proc and command line, 
-    _, scmd := getProcParam(spid)
-    log.Println("SSH Process cmdline = ", scmd)
+    _, pcmd := getProcParam(int32(ppid))
+    log.Println("SSH Process cmdline = ", pcmd)
 
     //Host to store connection information
     var h utils.Host
     h.Pid = ppid
     
     //Get socket connection parameters in host struct
-    getConnParams(spid, &h)
+    getConnParams(int32(ppid), &h)
     
     //Get client config parameters in host struct
     getConfigParams(&h)
@@ -187,5 +209,6 @@ func SendConfig() {
         }            
     }
     
-    utils.BlockForever()
+    waitForExit(fd)
+
 }

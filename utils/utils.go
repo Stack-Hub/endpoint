@@ -16,7 +16,11 @@ package utils
 import (
     "fmt"
     "os"
+    "strconv"
     "runtime"
+    "syscall"
+    
+    "golang.org/x/sys/unix"
 )
 
 /*
@@ -31,11 +35,11 @@ Match User %s
     X11Forwarding no
     AllowAgentForwarding no
     PermitTTY yes
-    ForceCommand flock `+ RUNPATH +`$$ -c "/usr/sbin/trafficrouter -f $SSH_ORIGINAL_COMMAND"
+    ForceCommand /usr/sbin/trafficrouter -f $SSH_ORIGINAL_COMMAND
 `
     SERVER_HOST = "0.0.0.0"
     SERVER_TYPE = "tcp"
-    DEFAULTUNAME = "tr"
+    DEFAULT_USER_PREFIX = "tr"
 )
 
 
@@ -77,4 +81,26 @@ func BlockForever() {
     for {
         runtime.Gosched()
     }
+}
+
+
+/*
+ * Lock file
+ */
+func LockFile(pid int) int {
+
+    f, err := os.Create(RUNPATH + strconv.Itoa(pid))
+    Check(err)
+    
+    fd := f.Fd()
+	err = unix.Flock(int(fd), syscall.LOCK_EX)
+    Check(err)
+    
+    return int(fd)
+}
+
+
+func UnlockFile(fd int) {
+	err := unix.Flock(fd, syscall.LOCK_UN)
+    Check(err)
 }

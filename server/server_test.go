@@ -238,22 +238,6 @@ func blockForever() {
     }
 }
 
-/*
- * Lock file
- */
-func lockFile(pid int) (*exec.Cmd) {
-    f := strconv.Itoa(pid)
-    cmd := "flock"
-    args := []string{utils.RUNPATH + f, "-c", "sleep infinity"}
-    
-    c := exec.Command(cmd, args...)
-
-    go func () {
-        c.Output()
-    }()
-
-    return c
-}
 
 /*
  * Remove file
@@ -322,7 +306,7 @@ func TestConnections(t *testing.T) {
     }
     
     for _, host := range data {
-        cmd := lockFile(host.Pid)
+        fd := utils.LockFile(host.Pid)
         cmds[cmd] = host.Pid
     }
 
@@ -383,25 +367,9 @@ func TestConnections(t *testing.T) {
     }
     
     
-    // Remove all connections.
-    for cmd, _ := range cmds {
-        proc, err := ps.NewProcess(int32(cmd.Process.Pid))
-        t.Error(
-                "\nFailed to create new process struct for ", cmd.Process.Pid,
-                "\nwith Error", err,
-            )
-        
-        children, err := proc.Children()
-        t.Error(
-                "\nProcess %d has no children ", cmd.Process.Pid,
-            )
-        
-        for _, child := range children {
-            child.Kill()
-        }
-        cmd.Process.Kill()
-    }
-
+    // Unlock pid file
+    utils.UnlockFile(fd)
+    
     // Wait for all connections to be removed.
     for {
         if len(hosts) == 0 {
