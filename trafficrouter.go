@@ -22,31 +22,20 @@ import (
     "flag"
     "regexp"
     "errors"
-    "runtime"
     "syscall"
+    "math/rand"
+    "time"
+    "log"
     
     "./omap"
     "./client"
     "./forcecmd"
     "./user"
     "./server"
-    "./config"
+    "./utils"
 )
 
 var m * omap.OMap
-
-func check(e error) {
-    if e != nil {
-        fmt.Fprintln(os.Stderr, e)
-        panic(e)
-    }
-}
-
-func blockForever() {
-    for {
-        runtime.Gosched()
-    }
-}
 
 // Handles incoming requests.
 func handleRequest(in net.Conn) {
@@ -57,7 +46,7 @@ func handleRequest(in net.Conn) {
         // Send a response back to person contacting us.
         in.Write([]byte("No Routes available."))   
     } else {
-        port := strconv.Itoa(int(h.Value.(server.Host).ListenPort))
+        port := strconv.Itoa(int(h.Value.(utils.Host).ListenPort))
         out, _ := net.Dial("tcp", "127.0.0.1:" + port)
         go io.Copy(out, in)
         io.Copy(in, out)
@@ -65,7 +54,7 @@ func handleRequest(in net.Conn) {
     }
 }
 
-func ConnAddEv(p int32, h server.Host) {
+func ConnAddEv(p int, h *utils.Host) {
     m.Add(p, h)
     fmt.Printf("Connected %s:%d on Port %d\n", 
                h.RemoteIP, 
@@ -74,7 +63,7 @@ func ConnAddEv(p int32, h server.Host) {
     
 }
 
-func ConnRemoveEv(p int32, h server.Host) {
+func ConnRemoveEv(p int, h *utils.Host) {
     m.Remove(p)
     fmt.Printf("Removed %s:%d from Port %d\n", 
                h.RemoteIP, 
@@ -83,51 +72,125 @@ func ConnRemoveEv(p int32, h server.Host) {
 }
 
 
-func parsePath(path string) (string, string, error) {
-    var remotePathRegexp = regexp.MustCompile("^((([^@]+)@)([^:]+))$")
-	parts := remotePathRegexp.FindStringSubmatch(path)
-	if len(parts) == 0 {
-		return "", "", errors.New(fmt.Sprintf("Could not parse remote path: [%s]\n", path))
+func parseToken(str string) (string, string, string, string, error) {
+    var expr = regexp.MustCompile(`^(((.*)/([^@]+)@)([^:]+):([0-9]+))$`)
+	parts := expr.FindStringSubmatch(str)
+	if len(str) == 0 {
+        utils.Check(errors.New(fmt.Sprintf("Token parse error: [%s]. Format user/passwd@host:port\n", str)))
 	}
-    return parts[3], parts[4], nil
+    return parts[3], parts[4], parts[5], parts[6], nil
+}
+
+
+func init() {
+    rand.Seed(time.Now().UnixNano())
+}
+
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+func RandStringRunes(n int) string {
+    b := make([]rune, n)
+    for i := range b {
+        b[i] = letterRunes[rand.Intn(len(letterRunes))]
+    }
+    return string(b)
+}
+
+func externalIP() string {
+	ifaces, err := net.Interfaces()
+    utils.Check(err)
+
+    for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
+		}
+        
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // loopback interface
+		}
+        
+		addrs, err := iface.Addrs()
+        utils.Check(err)
+
+        for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue // not an ipv4 address
+			}
+			return ip.String()
+		}
+	}
+	return ""
 }
 
 
 func main() {
 
-    // Command line options
-    // Client mode options
-    private := flag.String("priv", "", "Private Key File valid only in Client mode")
-    clientArg := flag.String("c", "", "Server Address in user@host Format")
+    /* Command line options
+     * Client mode options
+     */
+    priv  := flag.String("priv", "", "Private key file (client mode)")
+    clnt  := flag.String("c",    "", "Server token (ex: user/passwd@host:port) (client mode)")
+    cmd   := flag.String("cmd",  "", "Run a single command string through the shell (client mode)")
 
-    // Server mode options
-//    public := flag.String("pub", "", "Public Key File valid only in Server mode")
-    serverArg := flag.Bool("s", false, "Run as Server")
-    username := flag.String("u", "", "Username for Server")
-    uid := flag.Int("uid", -1, "User ID")
-    mode := flag.Int("mode", -2, "User Create mode")
+    /* Server mode options */
+    pub  := flag.String("pub",  "",    "Public key file (server mode)")
+    srv  := flag.Bool(  "s",    false, "Server mode")
+    port := flag.Int(   "p",    80,    "Listening Port (server mode)")
+    usr  := flag.String("u",    "",    "Username (server mode)")
+    uid  := flag.Int(   "uid",  -1,    "User ID (server mode)")
+    mode := flag.Int(   "mode", -2,    "User Create mode (server mode)")
 
-    tnl := flag.Bool("t", false, "Tunnel command used as SSH Force Command")
+    /* Force Command option */
+    frc := flag.Bool("f", false, "Force Command for SSH (tunnel mode)")
 
-    //Parse Command lines
+    /* Parse Command line */
     flag.Parse()
-    tail := flag.Args()  
+
+    if (*clnt != "" || *srv == true || *frc == true) {
+        log.Println("priv = ", *priv)
+        log.Println("clnt = ", *clnt)
+        log.Println("cmd  = ", *cmd)
+        log.Println("pub  = ", *pub)
+        log.Println("srv  = ", *srv)
+        log.Println("port = ", *port)
+        log.Println("usr  = ", *usr)
+        log.Println("uid  = ", *uid)
+        log.Println("mode = ", *mode)
+        log.Println("frc  = ", *frc)        
+    }
     
-    if (*clientArg != "") {
-        port := tail[0]
-        user, hostname, err := parsePath(*clientArg)
-        check(err)
+    /* Client mode */
+    if (*clnt != "") {
+        uname, passwd, host, port, err := parseToken(*clnt)
+        utils.Check(err)
+
+        log.Println(uname, passwd, host, port)
         
-        cmd, err := client.Start(*private, user, hostname, port)
+        cmd := client.StartWithPasswd(uname, passwd, host, port)
         defer client.Stop(cmd)
-        fmt.Println(cmd)
-        blockForever()
         
-    } else if (*serverArg == true) {
-        fmt.Println(os.Args)
-        if (*username == "") {
-            u := user.NewUserWithPassword("tr", "1234567890")
-            
+        fmt.Println(cmd)
+        utils.BlockForever()
+        
+    } else if (*srv == true) {
+        if (*usr == "") {
+            passwd := RandStringRunes(10)
+            u := user.NewUserWithPassword(utils.DEFAULTUNAME, passwd)
+
+            // Generate token for client.
+            fmt.Printf("Sever token - %s/%s@%s:%d\n", u.Name, passwd, externalIP(), *port)
+
             args := make([]string, len(os.Args) + 6)
             copy(args, os.Args)
             args[len(os.Args)]     = "-u"
@@ -137,37 +200,38 @@ func main() {
             args[len(os.Args) + 4] = "-mode"
             args[len(os.Args) + 5] = strconv.Itoa(u.Mode)
             
-            fmt.Println("Swamping new exec")
+            log.Println("Swamping new exec")
             err := syscall.Exec("/usr/sbin/" + os.Args[0], args, os.Environ())
-            fmt.Println("Swamped", err)
+            utils.Check(err)
         }
         
-        u := &user.User{Name: *username, Uid: *uid, Mode: *mode}
+        u := &user.User{Name: *usr, Uid: *uid, Mode: *mode}
+        defer u.Delete()
         
         m = omap.New()
-        server.Monitor(u.Uid, ConnAddEv, ConnRemoveEv)
-
-        l, err := net.Listen(config.SERVER_TYPE, config.SERVER_HOST+":"+config.SERVER_PORT)
-        if err != nil {
-            fmt.Println("Error listening:", err.Error())
-            os.Exit(1)
-        }
+        server.Monitor(ConnAddEv, ConnRemoveEv)
+        
+        addr := fmt.Sprintf("%s:%d", utils.SERVER_HOST, *port)
+        
+        l, err := net.Listen(utils.SERVER_TYPE, addr)
+        utils.Check(err)
+        
         // Close the listener when the application closes.
         defer l.Close()
 
-        fmt.Println("Listening on " + config.SERVER_HOST + ":" + config.SERVER_PORT)
+        fmt.Printf("Listening on %s:%d", utils.SERVER_HOST, *port)
         for {
             // Listen for an incoming connection.
             conn, err := l.Accept()
-            if err != nil {
-                fmt.Println("Error accepting: ", err.Error())
-                os.Exit(1)
-            }
+            utils.Check(err)
+            
             // Handle connections in a new goroutine.
             go handleRequest(conn)
         }    
-    } else if (*tnl == true) {
+    } else if (*frc == true) {
         forcecmd.SendConfig()
+    } else {
+        flag.PrintDefaults()
     }
 
 }

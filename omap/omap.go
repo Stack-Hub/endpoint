@@ -24,7 +24,7 @@ type Element struct {
 
 type OMap struct {
     nextIdx     * list.Element
-    elements      map[int32]*Element
+    elements      map[int]*Element
     keyList      * list.List
 }
 
@@ -32,14 +32,14 @@ func New() *OMap {
     var m OMap
 
     m.nextIdx  = nil
-    m.elements = make(map[int32]*Element, 1)
+    m.elements = make(map[int]*Element, 1)
     m.keyList  = list.New()
     m.keyList.Init()
     
     return &m
 }
 
-func (m *OMap) Add(key int32, v interface{}) *Element {
+func (m *OMap) Add(key int, v interface{}) *Element {
     e := m.keyList.PushBack(key)
     
     m.elements[key] = &Element{
@@ -50,7 +50,7 @@ func (m *OMap) Add(key int32, v interface{}) *Element {
     return m.elements[key]
 }
 
-func (m *OMap) Remove(key int32) *Element {
+func (m *OMap) Remove(key int) *Element {
     //Get Element from maps
     e := m.elements[key]
     
@@ -66,7 +66,7 @@ func (m *OMap) Remove(key int32) *Element {
 }
 
 
-func (m *OMap) Get(key int32) *Element {
+func (m *OMap) Get(key int) *Element {
     //Get Element from maps
     return m.elements[key]
 
@@ -81,7 +81,7 @@ func (m *OMap) Next() *Element {
         m.nextIdx = m.keyList.Front()
     }
         
-    e := m.elements[m.nextIdx.Value.(int32)]
+    e := m.elements[m.nextIdx.Value.(int)]
     
     if m.nextIdx.Next() == nil {
         m.nextIdx = m.keyList.Front()

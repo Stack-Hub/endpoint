@@ -76,7 +76,7 @@ func NewUserWithPassword(prefix string, pass string) *User {
     }()
     
     setUserPasswd(username, pass)
-    addUserSSHDConfig(config.SSHD_CONFIG, username)
+    addUserSSHDConfig(utils.SSHD_CONFIG, username)
     restartSSHServer()
     
     return u
@@ -123,7 +123,7 @@ func (u *User) Delete() error {
     fmt.Println(string(out))
     
     if (u.Mode == PASSWD) {
-        removeUserSSHDConfig(config.SSHD_CONFIG, u.Name)
+        removeUserSSHDConfig(utils.SSHD_CONFIG, u.Name)
         restartSSHServer()
     }
     return err
@@ -136,7 +136,7 @@ func (u *User) Delete() error {
  * username: Username for Match block.
  */
 func addUserSSHDConfig(path, username string) error {    
-      matchBlkStr := fmt.Sprintf(config.MATCHBLK, username)
+      matchBlkStr := fmt.Sprintf(utils.MATCHBLK, username)
 
       f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
       check(err)
@@ -155,7 +155,7 @@ func addUserSSHDConfig(path, username string) error {
  * username: Username for Match block.
  */
 func removeUserSSHDConfig(path, username string) error {    
-      matchBlkStr := fmt.Sprintf(config.MATCHBLK, username)
+      matchBlkStr := fmt.Sprintf(utils.MATCHBLK, username)
 
       input, err := ioutil.ReadFile(path)
       if err != nil {

@@ -16,13 +16,14 @@ package utils
 import (
     "fmt"
     "os"
+    "runtime"
 )
 
 /*
  *  Default configurations
  */
 const (
-    RUNPATH     = "/var/run/trafficrouter/"
+    RUNPATH     = "/tmp/"
     SSHD_CONFIG = "/etc/ssh/sshd_config" 
     MATCHBLK    = `
 Match User %s
@@ -30,11 +31,11 @@ Match User %s
     X11Forwarding no
     AllowAgentForwarding no
     PermitTTY yes
-    ForceCommand mkdir -p `+ RUNPATH +` && flock `+ RUNPATH +`$$ -c "/usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND"
+    ForceCommand flock `+ RUNPATH +`$$ -c "/usr/sbin/trafficrouter -f $SSH_ORIGINAL_COMMAND"
 `
     SERVER_HOST = "0.0.0.0"
-    SERVER_PORT = "80"
     SERVER_TYPE = "tcp"
+    DEFAULTUNAME = "tr"
 )
 
 
@@ -42,17 +43,17 @@ Match User %s
  *  Config Struct is passed from client to server
  */
 type Config struct {
-    Port uint16 `json:"port"`
+    Port uint32 `json:"port"`
 }
 
 /*
  *  Host Struct is passed from forceCmd to server
  */
 type Host struct {
-    ListenPort  uint16 `json:"lisport"`
+    ListenPort  uint32 `json:"lisport"`
     RemoteIP    string `json:"raddr"`
-    RemotePort  uint16 `json:"rport"`
-    AppPort     uint16 `json:"aport"`
+    RemotePort  uint32 `json:"rport"`
+    AppPort     uint32 `json:"aport"`
     Config      Config `json:"config"`
     Uid         int    `json:"uid"`
     Pid         int    `json:"pid"`
@@ -66,5 +67,14 @@ func Check(e error) {
     if e != nil {
         fmt.Fprintln(os.Stderr, e)
         panic(e)
+    }
+}
+
+/*
+ * Block Program Forever
+ */
+func BlockForever() {
+    for {
+        runtime.Gosched()
     }
 }

@@ -21,22 +21,16 @@ import (
     "strconv"
     "net"
     "log"
-    "runtime"
 
-    "../config"
+    "../utils"
     netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
 )
 
-
-func blockForever() {
-    select { }
-}
-
 /*
  *  Get Parent process's pid and commandline.
  */
-func getProcParam(int32 p) (*ps.Process, cmd string) {
+func getProcParam(p int32) (*ps.Process, string) {
 
     // Init process struct based on PID
     proc, err := ps.NewProcess(p)
@@ -46,13 +40,13 @@ func getProcParam(int32 p) (*ps.Process, cmd string) {
     cmd, err := proc.Cmdline()
     utils.Check(err)
     
-    return pid, cmd
+    return proc, cmd
 }
 
 /*
  *  Get tunnel connections parameters in host struct
  */
-func getConnParams(pid int32, h *Host) {
+func getConnParams(pid int32, h *utils.Host) {
     // Get SSH reverse tunnel connection information.
     // 3 sockers are opened by ssh:
     // 1. Connection from client to server
@@ -66,7 +60,7 @@ func getConnParams(pid int32, h *Host) {
         // Family = 2 indicates IPv4 socket. Store Listen Port
         // in host structure.
         if c.Family == 2 && c.Status == "LISTEN" {
-            h.ListenPort = int32(c.Laddr.Port)
+            h.ListenPort = c.Laddr.Port
         }
 
         // Store Established connection IP & Port in host structure.
@@ -81,14 +75,14 @@ func getConnParams(pid int32, h *Host) {
 /*
  *  Get Client configuration parameters in host struct
  */
-func getConfigParams(h *Host) {
+func getConfigParams(h *utils.Host) {
     
     // Get Client config which should be the last argument
     cfgstr := os.Args[len(os.Args) - 1]
     log.Println(cfgstr)
     
     // Conver config to json
-    cfg := Config{}
+    cfg := utils.Config{}
     json.Unmarshal([]byte(cfgstr), &cfg)
     
     // Update and log host var
@@ -105,7 +99,7 @@ func match(regex string, str string) bool {
 
     if len(str) > 0 {
         // find server with current user ID using command line match 
-        ok, err := regexp.MatchString(pstr, cmd)
+        ok, err := regexp.MatchString(regex, str)
         utils.Check(err)
 
         // If found send host var to server
@@ -120,10 +114,10 @@ func match(regex string, str string) bool {
 /*
  *  Match string with regex.
  */
-func writeHost(pid int32, h *Host) {
+func writeHost(pid int32, h *utils.Host) {
 
     // Form Unix socket based on pid 
-    f := config.RUNPATH + strconv.Itoa(int(pid)) + ".sock"
+    f := utils.RUNPATH + strconv.Itoa(int(pid)) + ".sock"
     log.Println("SOCK: ", f)
     c, err := net.Dial("unix", f)
     utils.Check(err)
@@ -158,12 +152,12 @@ func SendConfig() {
     utils.Check(err)
 
     // Get SSH proc and command line, 
-    sproc, scmd := getProcParam(spid)
+    _, scmd := getProcParam(spid)
     log.Println("SSH Process cmdline = ", scmd)
 
     //Host to store connection information
-    var h Host
-    h.Pid = int32(ppid)
+    var h utils.Host
+    h.Pid = ppid
     
     //Get socket connection parameters in host struct
     getConnParams(spid, &h)
@@ -182,16 +176,16 @@ func SendConfig() {
     for _, p := range pids  {
         
         // Get proc and commandline based on pid
-        pr, cmd := getProcParam(p)
+        _, cmd := getProcParam(p)
 
         // Check if server 
         ok := match(fmt.Sprintf(`trafficrouter .* -uid %d .*`, os.Getuid()), cmd)
         // If found send host var to server
         if ok {    
             log.Printf("Found Server Process %s, pid = %d\n", cmd, p)
-            writeHost(p, h)
+            writeHost(p, &h)
         }            
     }
     
-    blockForever()
+    utils.BlockForever()
 }

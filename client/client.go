@@ -14,34 +14,60 @@
 package client
 
 import (
-	"fmt"
-	"os"
+    "os"
 	"os/exec"
+    "log"
+    
+    "../utils"
 )
 
 
-func Start(privKeyFile string, username string, hostname string, port string) (*exec.Cmd, error)  {
+func StartWithKey(key string, u string, h string, p string) *exec.Cmd  {
 	// ssh open reverse tunnel
-	cmdName := "ssh"
-	cmdArgs := []string{"-q", "-t", "-i", privKeyFile, "-o", "StrictHostkeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-R", "0:localhost:" + port, username + "@" + hostname, "{\"port\":" + port + "}"}
+	cmd := "ssh"
+	args := []string{"-q", 
+                     "-t", 
+                     "-i", key, 
+                     "-o", "StrictHostkeyChecking=no", 
+                     "-o", "UserKnownHostsFile=/dev/null", 
+                     "-R", "0:localhost:" + p, u + "@" + h, 
+                     "{\"port\":" + p + "}"}
     
-	cmd := exec.Command(cmdName, cmdArgs...)
-	out, err := cmd.Output()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error opening ssh (revers tunnel)", err)
-		os.Exit(1)
-	}
+    c := exec.Command(cmd, args...)
+    c.Stdout = os.Stdout
+    c.Stderr = os.Stderr
+    err := c.Start()
+    utils.Check(err)
         
-    fmt.Println(string(out))
-    return cmd, err
+    return c
 }
 
-func Stop(cmd *exec.Cmd) (error) {
+func StartWithPasswd(u string, pass string, h string, p string) *exec.Cmd {
+	// ssh open reverse tunnel
+	cmd := "sshpass"
+	args := []string{"-p", pass,
+                     "ssh",
+                     "-q", 
+                     "-t", 
+                     "-o", "StrictHostkeyChecking=no", 
+                     "-o", "UserKnownHostsFile=/dev/null", 
+                     "-R", "0:localhost:" + p, u + "@" + h, 
+                     "{\"port\":" + p + "}"}
+
+    log.Println(cmd, args)
+    
+	c := exec.Command(cmd, args...)
+    c.Stdout = os.Stdout
+    c.Stderr = os.Stderr
+    err := c.Start()
+    utils.Check(err)
+    
+    return c
+}
+
+
+func Stop(cmd *exec.Cmd) {
  
     err := cmd.Process.Kill()
-	if err != nil {
-        fmt.Fprintln(os.Stderr, "Error killing ssh (revers tunnel) process", err)
-        return err
-	}
-    return nil
+    utils.Check(err)
 }

@@ -386,10 +386,15 @@ func TestConnections(t *testing.T) {
     // Remove all connections.
     for cmd, _ := range cmds {
         proc, err := ps.NewProcess(int32(cmd.Process.Pid))
-        utils.Check(err)
+        t.Error(
+                "\nFailed to create new process struct for ", cmd.Process.Pid,
+                "\nwith Error", err,
+            )
         
         children, err := proc.Children()
-        utils.Check(err)
+        t.Error(
+                "\nProcess %d has no children ", cmd.Process.Pid,
+            )
         
         for _, child := range children {
             child.Kill()
