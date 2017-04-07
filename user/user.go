@@ -20,8 +20,6 @@ package user
 
 import (
 	"fmt"
-    "regexp"
-    "errors"
     "os/exec"
     "os/user"
     "os"
@@ -31,6 +29,7 @@ import (
     "strings"
     
     "../utils"
+    log "github.com/Sirupsen/logrus"
 )
 
 const (
@@ -51,17 +50,18 @@ func check(e error) {
     }
 }
 
-func NewUserWithPassword(prefix string, pass string) *User {
-    username, err := addUniqueUser(prefix)
+func NewUserWithPassword(uname string, pass string) *User {
+    log.Debug("uname=", uname, ",pass=", pass)
+    err := addUser(uname)
     check(err)
     
-    user, err := user.Lookup(username)
+    user, err := user.Lookup(uname)
     check(err)
     
     uid, err := strconv.Atoi(user.Uid)
     check(err)
     
-    u := &User {username, uid, PASSWD}
+    u := &User {uname, uid, PASSWD}
     
     /**
      * Recover in case of any panic down the stack, 
@@ -75,24 +75,24 @@ func NewUserWithPassword(prefix string, pass string) *User {
         }
     }()
     
-    setUserPasswd(username, pass)
-    addUserSSHDConfig(utils.SSHD_CONFIG, username)
+    setUserPasswd(uname, pass)
+    addUserSSHDConfig(utils.SSHD_CONFIG, uname)
     restartSSHServer()
     
     return u
 }
 
-func NewUserWithKey(prefix string, keyfile string) *User {
-    username, err := addUniqueUser(prefix)
+func NewUserWithKey(uname string, keyfile string) *User {
+    err := addUser(uname)
     check(err)
 
-    user, err := user.Lookup(username)
+    user, err := user.Lookup(uname)
     check(err)
         
     uid, err := strconv.Atoi(user.Uid)
     check(err)
     
-    u := &User {username, uid, KEY}
+    u := &User {uname, uid, KEY}
     
     /**
      * Recover in case of any panic down the stack, 
@@ -106,7 +106,7 @@ func NewUserWithKey(prefix string, keyfile string) *User {
         }
     }()
 
-    allowKeyAccess(username, keyfile)
+    allowKeyAccess(uname, keyfile)
     
     return u
 }
@@ -210,28 +210,16 @@ func exists(path string) (bool, error) {
 }
 
 /**
-* Check if User exists
-*/
-func chkUser(username string) error {
-    // Add user
-	cmdName := "id"
-	cmdArgs := []string{"-u", username}
-    
-    out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println("chkuser ", string(out))
-    return err
-}
-
-/**
 * Add User without Password
 */
 func addUser(username string) error {
     // Add user
-	cmdName := "adduser"
-	cmdArgs := []string{"--disabled-password", "--gecos", "\"" + username + "\"", username}
+	cmd  := "useradd"
+	args := []string{username}
+    log.Debug("cmd=", cmd, ",args=", args)
     
-    out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println("adduser ", string(out))
+    out, err := exec.Command(cmd, args...).Output()
+    log.Debug("adduser output = ", string(out))
     return err
 }
 
@@ -258,40 +246,6 @@ func setUserPasswd(username string, passwd string) error {
     stdin.Close()
     cmd.Wait()
     return nil
-}
-
-/**
-* Generate Unique Username based on give prefix
-* and add user in linux system
-*/
-func addUniqueUser(prefix string) (string, error) {
-    username := ""
-    for id := 1; id < 1000; id++ {
-        username = prefix + strconv.Itoa(id) 
-        
-        err := chkUser(username)
-        if err == nil {
-            fmt.Println(err)
-            continue
-        }
-        
-        addUser(username)
-        return username, nil
-    }
-    
-    return "", errors.New("Could not add user with prefix " + prefix)
-}
-
-/**
-* Parse user@host string and return user & host 
-*/
-func parsePath(path string) (string, string, error) {
-    var remotePathRegexp = regexp.MustCompile("^((([^@]+)@)([^:]+))$")
-	parts := remotePathRegexp.FindStringSubmatch(path)
-	if len(parts) == 0 {
-		return "", "", errors.New(fmt.Sprintf("Could not parse remote path: [%s]\n", path))
-	}
-    return parts[3], parts[4], nil
 }
 
 /**

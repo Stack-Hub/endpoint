@@ -172,17 +172,25 @@ func SendConfig() {
 
     // Flock on pid file
     fd := utils.LockFile(ppid)
-    
-    // Get parent process params
-    _, pcmd := getProcParam(int32(ppid))
-    log.Println("SSH Process cmdline = ", pcmd)
 
+    // Get parent process params
+    pproc, pcmd := getProcParam(int32(ppid))
+    log.Println("Parent Process cmdline = ", pcmd)
+
+    // Get SSH process ID
+    spid, err := pproc.Ppid()
+    utils.Check(err)
+
+    // Get SSH proc and command line, 
+    _, scmd := getProcParam(spid)
+    log.Println("SSH Process cmdline = ", scmd)
+    
     //Host to store connection information
     var h utils.Host
     h.Pid = ppid
     
     //Get socket connection parameters in host struct
-    getConnParams(int32(ppid), &h)
+    getConnParams(spid, &h)
     
     //Get client config parameters in host struct
     getConfigParams(&h)

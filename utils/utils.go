@@ -37,9 +37,6 @@ Match User %s
     PermitTTY yes
     ForceCommand /usr/sbin/trafficrouter -f $SSH_ORIGINAL_COMMAND
 `
-    SERVER_HOST = "0.0.0.0"
-    SERVER_TYPE = "tcp"
-    DEFAULT_USER_PREFIX = "tr"
 )
 
 
