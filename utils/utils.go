@@ -17,7 +17,6 @@ import (
     "fmt"
     "os"
     "strconv"
-    "runtime"
     "syscall"
     
     "golang.org/x/sys/unix"
@@ -75,9 +74,7 @@ func Check(e error) {
  * Block Program Forever
  */
 func BlockForever() {
-    for {
-        runtime.Gosched()
-    }
+    select {}
 }
 
 

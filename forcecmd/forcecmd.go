@@ -20,7 +20,6 @@ import (
     "regexp"
     "strconv"
     "net"
-    "log"
     "os/signal"
     "syscall"
 
@@ -28,8 +27,17 @@ import (
     "golang.org/x/sys/unix"
     netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
-    
+    log "github.com/Sirupsen/logrus"    
 )
+
+var fd int
+
+/*
+ * Cleanup on termination.
+ */
+func Cleanup() {
+    utils.UnlockFile(fd)    
+}
 
 /*
  * Wait for parent to exit.
@@ -81,7 +89,7 @@ func getConnParams(pid int32, h *utils.Host) {
     // 3. Listening socket for IPv6
     conns, err := netutil.ConnectionsPid("inet", pid)
     utils.Check(err)
-    log.Println(conns)
+    log.Debug(conns)
 
     for _, c := range conns {
         // Family = 2 indicates IPv4 socket. Store Listen Port
@@ -106,7 +114,7 @@ func getConfigParams(h *utils.Host) {
     
     // Get Client config which should be the last argument
     cfgstr := os.Args[len(os.Args) - 1]
-    log.Println(cfgstr)
+    log.Debug(cfgstr)
     
     // Conver config to json
     cfg := utils.Config{}
@@ -145,7 +153,7 @@ func writeHost(pid int32, h *utils.Host) {
 
     // Form Unix socket based on pid 
     f := utils.RUNPATH + strconv.Itoa(int(pid)) + ".sock"
-    log.Println("SOCK: ", f)
+    log.Debug("SOCK: ", f)
     c, err := net.Dial("unix", f)
     utils.Check(err)
     
@@ -168,14 +176,14 @@ func SendConfig() {
     
     // Get parent proc ID which will be flock's pid.
     ppid := os.Getppid()
-    log.Println("ppid = ", ppid)
+    log.Debug("ppid = ", ppid)
 
     // Flock on pid file
-    fd := utils.LockFile(ppid)
+    fd = utils.LockFile(ppid)
 
     // Get parent process params
     pproc, pcmd := getProcParam(int32(ppid))
-    log.Println("Parent Process cmdline = ", pcmd)
+    log.Debug("Parent Process cmdline = ", pcmd)
 
     // Get SSH process ID
     spid, err := pproc.Ppid()
@@ -183,7 +191,7 @@ func SendConfig() {
 
     // Get SSH proc and command line, 
     _, scmd := getProcParam(spid)
-    log.Println("SSH Process cmdline = ", scmd)
+    log.Debug("SSH Process cmdline = ", scmd)
     
     //Host to store connection information
     var h utils.Host
@@ -212,7 +220,7 @@ func SendConfig() {
         ok := match(fmt.Sprintf(`trafficrouter .* -uid %d .*`, os.Getuid()), cmd)
         // If found send host var to server
         if ok {    
-            log.Printf("Found Server Process %s, pid = %d\n", cmd, p)
+            log.Debug("Found Server Process %s, pid = %d\n", cmd, p)
             writeHost(p, &h)
         }            
     }

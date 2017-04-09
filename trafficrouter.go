@@ -22,6 +22,11 @@ import (
     "regexp"
     "errors"
     "syscall"
+    "strings"
+    "os/exec"
+    "os/signal"
+    "time"
+    "bufio"
     
     "./omap"
     "./client"
@@ -35,6 +40,33 @@ import (
 )
 
 var m * omap.OMap
+var ch chan bool
+var registered bool 
+
+
+/*
+ *  Cleanup before exit
+ */
+func cleanup() {    
+    log.Debug("Cleaning up")
+    forcecmd.Cleanup()
+    user.Cleanup()
+}
+
+/*
+ *  Install Signal handler for proper cleanup.
+ */
+func installHandler() {
+    sigs := make(chan os.Signal, 1)    
+    signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+    go func() {
+        sig := <-sigs
+        log.Debug(sig)
+        cleanup()
+        os.Exit(1)
+    }()    
+}
+
 
 // Handles incoming requests.
 func handleRequest(in net.Conn) {
@@ -59,6 +91,13 @@ func ConnAddEv(p int, h *utils.Host) {
                h.RemoteIP, 
                h.AppPort, 
                h.ListenPort)
+            
+    if registered == false {
+        // Unblock registeration
+        log.Debug("Unblocking Registration")
+        ch <-true
+    }
+    
     
 }
 
@@ -77,7 +116,7 @@ func parseNeeds(str string) (string, string, string, string) {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format rhost:rport@lhost(:lport)?\n", str)))
 	}
     
-    if len(str) > 4 {
+    if len(parts) > 4 {
         return parts[1], parts[2], parts[3], parts[5]
     } else {
         return parts[1], parts[2], parts[3], ""
@@ -93,7 +132,8 @@ func parseRegister(str string) (string, string, string, bool) {
     
     wildcard := false
     
-    if len(str) > 3 {
+    log.Debug(parts)
+    if parts[4] == "*" {
         wildcard = true
     }
     
@@ -102,6 +142,26 @@ func parseRegister(str string) (string, string, string, bool) {
 
 
 func TrafficRouter(c *cli.Context) error {
+
+    /*
+     * Install Signal handlers for proper cleanup.
+     */
+    installHandler()
+    
+    /*
+     * Global error handling.
+     * Cleanup and exit.
+     */
+    defer func() {
+        if r := recover(); r != nil {
+            log.Debug("Recovered ", r)
+            cleanup()
+            os.Exit(1)
+        }
+    }()    
+    
+    ch = make(chan bool, 2)
+    registered = false
     
     // Send message for Force Command mode and return.
     if (c.Bool("f") == true) {
@@ -113,8 +173,7 @@ func TrafficRouter(c *cli.Context) error {
     if passwd == "" {
         log.Fatal("Empty password. Please provide password")
     }
-    
-    
+        
     // Wait for Needed service before registering.
     if (c.String("needs") != "") {
         rhost, rport, lhost, lport := parseNeeds(c.String("needs"))
@@ -158,13 +217,15 @@ func TrafficRouter(c *cli.Context) error {
         }
         
         u := &user.User{Name: usr, Uid: uid, Mode: mode}
+        user.RestoreUser(u)
         defer u.Delete()
         
         // Initialize Ordered map and server events.
         m = omap.New()
-        server.Monitor(ConnAddEv, ConnRemoveEv)
+        go server.Monitor(ConnAddEv, ConnRemoveEv)
         
-        addr := fmt.Sprintf("%s:%d", rhost, rport)
+        addr := fmt.Sprintf("%s:%s", lhost, lport)
+        log.Debug("addr=", addr)
         
         l, err := net.Listen("tcp", addr)
         utils.Check(err)
@@ -172,31 +233,86 @@ func TrafficRouter(c *cli.Context) error {
         // Close the listener when the application closes.
         defer l.Close()
 
-        fmt.Printf("Listening on %s", addr)
-        for {
-            // Listen for an incoming connection.
-            conn, err := l.Accept()
-            utils.Check(err)
-            
-            // Handle connections in a new goroutine.
-            go handleRequest(conn)
-        }    
+        go func() {
+            fmt.Printf("Listening on %s\n", addr)
+            for {
+                // Listen for an incoming connection.
+                conn, err := l.Accept()
+                utils.Check(err)
+
+                // Handle connections in a new goroutine.
+                go handleRequest(conn)
+            }                
+        }()
+    } else {
+        // Unblock registeration
+        log.Debug("Unblocking Registration")
+        ch <-true
     }
     
-    /* Client mode */
-    if (c.String("register") != "") {
-        lhost, lport, rhost, wc := parseRegister(c.String("register"))
+    go func() {
+        /* Client mode */
+        if (c.String("register") != "") {
+            log.Debug("Waiting for Dependency connections")
+            <-ch 
+            log.Debug("Registering")
+            lhost, lport, rhost, wc := parseRegister(c.String("register"))
 
-        log.Println(lhost, lport, rhost, wc)
-        uname := lhost + "." + lport
-        
-        cmd := client.StartWithPasswd(uname, passwd, rhost, lport)
-        defer client.Stop(cmd)
-        
-        fmt.Println(cmd)
-        utils.BlockForever()
-        
-    } 
+            log.Println(lhost, lport, rhost, wc)
+            uname := lhost + "." + lport
+            
+            if wc == true {
+                i := 1
+                for {
+                    rdns := rhost + strconv.Itoa(i)
+                    //Check if host exists
+                    log.Debug("Checking ", rdns)
+                    raddrs, err := net.LookupHost(rdns)
+                    if err != nil && len(raddrs) > 0 {
+                        cmd := client.StartWithPasswd(uname, passwd, rdns, lport)
+                        defer client.Stop(cmd)
+                        log.Debug(cmd)          
+                        i++
+                    } 
+                    poll := c.Int("poll-interval")
+                    time.Sleep( time.Duration(poll) * 1000 * time.Millisecond)
+                }
+            } else {
+                cmd := client.StartWithPasswd(uname, passwd, rhost, lport)
+                defer client.Stop(cmd)
+                log.Debug(cmd)                                                    
+            }
+            
+            utils.BlockForever()
+        }         
+    }()
     
+    if (c.String("cmd") != "") {
+        cmdargs := strings.Split(c.String("cmd")," ")
+        cmd := cmdargs[0]
+        args := cmdargs[1:]
+        log.Debug("Executing ", cmd, args)
+        c := exec.Command(cmd, args...)
+        stdout, _ := c.StdoutPipe()
+        stderr, _ := c.StderrPipe()
+        
+        stdoutscanner := bufio.NewScanner(stdout)
+        stderrscanner := bufio.NewScanner(stderr)
+        go func() {
+            for stdoutscanner.Scan() {
+                fmt.Println(stdoutscanner.Text())
+            }
+        }()
+        go func() {
+            for stderrscanner.Scan() {
+                fmt.Println(stderrscanner.Text())
+            }
+        }()
+
+        
+        c.Start()
+    }
+    
+    utils.BlockForever()
     return nil
 }

@@ -43,37 +43,48 @@ type User struct {
     Mode int
 }
 
-func check(e error) {
-    if e != nil {
-        fmt.Fprintln(os.Stderr, e)
-        panic(e)
-    }
+/*
+ * Map to store created users
+ */
+var users = make(map[string]*User)
+
+/*
+ * Cleanup on termination.
+ */
+func Cleanup() {
+    log.Debug("Deleting Users")
+    log.Debug("users = ", users)
+
+    for _, u := range users {
+        log.Debug("Deleting ", u)
+        u.Delete()
+        log.Debug("users = ", users)
+    }      
 }
+
+func RestoreUser(u *User) {
+    users[u.Name] = u
+}
+
 
 func NewUserWithPassword(uname string, pass string) *User {
     log.Debug("uname=", uname, ",pass=", pass)
     err := addUser(uname)
-    check(err)
+    utils.Check(err)
     
     user, err := user.Lookup(uname)
-    check(err)
+    utils.Check(err)
     
     uid, err := strconv.Atoi(user.Uid)
-    check(err)
+    utils.Check(err)
     
     u := &User {uname, uid, PASSWD}
-    
-    /**
-     * Recover in case of any panic down the stack, 
-     * delete user and return nil
-     */
-    defer func() {
-        if r := recover(); r != nil {
-            fmt.Println("Recovered in f", r)
-            u.Delete()
-            u = nil
-        }
-    }()
+
+    log.Debug("Adding user ", u)
+    // Store user info for cleanup
+    users[uname] = u    
+    log.Debug("users = ", users)
+
     
     setUserPasswd(uname, pass)
     addUserSSHDConfig(utils.SSHD_CONFIG, uname)
@@ -84,28 +95,19 @@ func NewUserWithPassword(uname string, pass string) *User {
 
 func NewUserWithKey(uname string, keyfile string) *User {
     err := addUser(uname)
-    check(err)
+    utils.Check(err)
 
     user, err := user.Lookup(uname)
-    check(err)
+    utils.Check(err)
         
     uid, err := strconv.Atoi(user.Uid)
-    check(err)
+    utils.Check(err)
     
     u := &User {uname, uid, KEY}
     
-    /**
-     * Recover in case of any panic down the stack, 
-     * delete user and return nil
-     */
-    defer func() {
-        if r := recover(); r != nil {
-            fmt.Println("Recovered in f", r)
-            u.Delete()
-            u = nil
-        }
-    }()
-
+    // Store user info for cleanup
+    users[uname] = u    
+    
     allowKeyAccess(uname, keyfile)
     
     return u
@@ -120,12 +122,18 @@ func (u *User) Delete() error {
 	cmdArgs := []string{"--remove-home", u.Name}
     
     out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println(string(out))
+    log.Debug(string(out))
     
     if (u.Mode == PASSWD) {
         removeUserSSHDConfig(utils.SSHD_CONFIG, u.Name)
         restartSSHServer()
     }
+    
+    // Remove user from map store
+    if err == nil {
+        delete(users, u.Name)
+    }
+    
     return err
 }
 
@@ -139,11 +147,11 @@ func addUserSSHDConfig(path, username string) error {
       matchBlkStr := fmt.Sprintf(utils.MATCHBLK, username)
 
       f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-      check(err)
+      utils.Check(err)
       defer f.Close()
 
       _, err = f.WriteString(matchBlkStr)
-      check(err)
+      utils.Check(err)
 
       return nil
 }
@@ -159,14 +167,14 @@ func removeUserSSHDConfig(path, username string) error {
 
       input, err := ioutil.ReadFile(path)
       if err != nil {
-              check(err)
+          utils.Check(err)
       }
     
       config := strings.Replace(string(input), matchBlkStr, "", -1)
     
       err = ioutil.WriteFile(path, []byte(config), 0644)
       if err != nil {
-              check(err)
+          utils.Check(err)
       }
       
       return nil
@@ -181,7 +189,7 @@ func restartSSHServer() error {
     cmdArgs := []string{"ssh", "restart"}
     
     out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println(string(out))
+    log.Debug(string(out))
     return err
 }
 
@@ -195,7 +203,7 @@ func chown(username string, file string) error {
     cmdArgs := []string{username + ":" + username, file}
     
     out, err := exec.Command(cmdName, cmdArgs...).Output()
-    fmt.Println(string(out))
+    log.Debug(string(out))
     return err
 }
 
@@ -218,8 +226,10 @@ func addUser(username string) error {
 	args := []string{username}
     log.Debug("cmd=", cmd, ",args=", args)
     
-    out, err := exec.Command(cmd, args...).Output()
-    log.Debug("adduser output = ", string(out))
+    c := exec.Command(cmd, args...)
+    c.Stderr = os.Stderr
+    err := c.Run()
+    
     return err
 }
 
@@ -233,13 +243,13 @@ func setUserPasswd(username string, passwd string) error {
     cmd := exec.Command(cmdName, cmdArgs...)
 
     stdin, err := cmd.StdinPipe()
-    check(err)
+    utils.Check(err)
 
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
 
     if err = cmd.Start(); err != nil { //Use start, not run
-        check(err)
+        utils.Check(err)
     }
 
     io.WriteString(stdin, username + ":" + passwd)
@@ -258,13 +268,13 @@ func allowKeyAccess(username string, keyFile string) {
     homeDir := "/home/" + username 
         
     key, err := ioutil.ReadFile(keyFile)
-    check(err) 
+    utils.Check(err) 
     
     entry := fmt.Sprintf(forceCommand, key)
 
     if res, _ := exists(homeDir + "/.ssh"); res != true {
         err = os.Mkdir(homeDir + "/.ssh", 0700)
-        check(err)
+        utils.Check(err)
         chown(username, homeDir + "/.ssh")
     }
 
@@ -272,9 +282,9 @@ func allowKeyAccess(username string, keyFile string) {
     // Path for force command script
     authFile := homeDir + "/.ssh/authorized_keys" 
     err = ioutil.WriteFile(authFile, data, 0600)
-    check(err)
+    utils.Check(err)
 
     err = chown(username, authFile)
-    check(err)
+    utils.Check(err)
 }
 

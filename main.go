@@ -51,13 +51,28 @@ func main() {
 		},	
         cli.StringFlag{
 			Name:  "needs",
-            Usage: "Services needed by Cmd e.g. db:3306@localhost or app:8080@localhost:80",
+            Usage: "Services needed by Cmd. Format `app:port@laddr:lport` e.g. db:3306@localhost",
 			Value: "",
 		},	
         cli.StringFlag{
 			Name:  "register",
-            Usage: "Services Cmd should register e.g. db:3306@app-* or app:8080@lb-*",
+            Usage: "Services Cmd should register. Format `app:port@raddr` e.g. db:3306@app or db:3360@app-*",
 			Value: "",
+		},	
+        cli.BoolFlag{
+			Name:  "forcecmd, f",
+            Usage: "Use as force command (Don't set, it is used internally)",
+			Hidden: false,
+		},	
+        cli.StringFlag{
+			Name:  "cmd",
+            Usage: "Execute Command",
+			Value: "",
+		},	
+        cli.IntFlag{
+			Name:  "poll-interval",
+            Usage: "Interval to detect new hosts, used with wildcard in --register option",
+			Value: 1,
 		},	
         cli.StringFlag{
 			Name:  "usr, u",
@@ -73,11 +88,6 @@ func main() {
 			Name:  "mode",
             Usage: "User Creation mode for local service discovery (Don't set, it is used internally)",
 			Value: -1,
-		},	
-        cli.BoolFlag{
-			Name:  "forcecmd, f",
-            Usage: "Use as force command (Don't set, it is used internally)",
-			Hidden: false,
 		},	
     }
     
