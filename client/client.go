@@ -22,27 +22,14 @@ import (
 )
 
 
-func StartWithKey(key string, u string, h string, p string) *exec.Cmd  {
-	// ssh open reverse tunnel
-	cmd := "ssh"
-	args := []string{"-q", 
-                     "-t", 
-                     "-i", key, 
-                     "-o", "StrictHostkeyChecking=no", 
-                     "-o", "UserKnownHostsFile=/dev/null", 
-                     "-R", "0:localhost:" + p, u + "@" + h, 
-                     "{\"port\":" + p + "}"}
-    
-    c := exec.Command(cmd, args...)
-    c.Stdout = os.Stdout
-    c.Stderr = os.Stderr
-    err := c.Start()
-    utils.Check(err)
-        
-    return c
-}
+func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
 
-func StartWithPasswd(u string, pass string, h string, p string) *exec.Cmd {
+    isDebug := func() string {
+        if debug == true {
+            return "-D"
+        }
+        return ""
+    }
 	// ssh open reverse tunnel
 	cmd := "sshpass"
 	args := []string{"-p", pass,
@@ -52,6 +39,8 @@ func StartWithPasswd(u string, pass string, h string, p string) *exec.Cmd {
                      "-o", "StrictHostkeyChecking=no", 
                      "-o", "UserKnownHostsFile=/dev/null", 
                      "-R", "0:localhost:" + p, u + "@" + h, 
+                     "--",
+                     isDebug(),
                      "{\"port\":" + p + "}"}
 
     log.Println(cmd, args)
@@ -66,7 +55,7 @@ func StartWithPasswd(u string, pass string, h string, p string) *exec.Cmd {
 }
 
 
-func Stop(cmd *exec.Cmd) {
+func Disconnect(cmd *exec.Cmd) {
  
     err := cmd.Process.Kill()
     utils.Check(err)

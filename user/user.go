@@ -21,26 +21,17 @@ package user
 import (
 	"fmt"
     "os/exec"
-    "os/user"
     "os"
     "io"
     "io/ioutil"
-    "strconv"
     "strings"
     
     "../utils"
     log "github.com/Sirupsen/logrus"
 )
 
-const (
-    PASSWD      = 0
-    KEY         = 1
-)
-
 type User struct {
     Name string
-    Uid  int
-    Mode int
 }
 
 /*
@@ -62,53 +53,21 @@ func Cleanup() {
     }      
 }
 
-func RestoreUser(u *User) {
-    users[u.Name] = u
-}
-
-
 func NewUserWithPassword(uname string, pass string) *User {
     log.Debug("uname=", uname, ",pass=", pass)
     err := addUser(uname)
     utils.Check(err)
-    
-    user, err := user.Lookup(uname)
-    utils.Check(err)
-    
-    uid, err := strconv.Atoi(user.Uid)
-    utils.Check(err)
-    
-    u := &User {uname, uid, PASSWD}
+        
+    u := &User {uname}
 
     log.Debug("Adding user ", u)
     // Store user info for cleanup
     users[uname] = u    
     log.Debug("users = ", users)
-
     
     setUserPasswd(uname, pass)
     addUserSSHDConfig(utils.SSHD_CONFIG, uname)
     restartSSHServer()
-    
-    return u
-}
-
-func NewUserWithKey(uname string, keyfile string) *User {
-    err := addUser(uname)
-    utils.Check(err)
-
-    user, err := user.Lookup(uname)
-    utils.Check(err)
-        
-    uid, err := strconv.Atoi(user.Uid)
-    utils.Check(err)
-    
-    u := &User {uname, uid, KEY}
-    
-    // Store user info for cleanup
-    users[uname] = u    
-    
-    allowKeyAccess(uname, keyfile)
     
     return u
 }
@@ -119,15 +78,13 @@ func NewUserWithKey(uname string, keyfile string) *User {
 func (u *User) Delete() error {
     // Delete user
 	cmdName := "deluser"
-	cmdArgs := []string{"--remove-home", u.Name}
+    cmdArgs := []string{u.Name}
     
     out, err := exec.Command(cmdName, cmdArgs...).Output()
     log.Debug(string(out))
     
-    if (u.Mode == PASSWD) {
-        removeUserSSHDConfig(utils.SSHD_CONFIG, u.Name)
-        restartSSHServer()
-    }
+    removeUserSSHDConfig(utils.SSHD_CONFIG, u.Name)
+    restartSSHServer()
     
     // Remove user from map store
     if err == nil {
@@ -194,36 +151,12 @@ func restartSSHServer() error {
 }
 
 /**
- * Chown based on username
- */
-func chown(username string, file string) error {
-
-    // Add user
-	cmdName := "chown"
-    cmdArgs := []string{username + ":" + username, file}
-    
-    out, err := exec.Command(cmdName, cmdArgs...).Output()
-    log.Debug(string(out))
-    return err
-}
-
-/**
-* Check whether the given file or directory exists or not
-*/
-func exists(path string) (bool, error) {
-    _, err := os.Stat(path)
-    if err == nil { return true, nil }
-    if os.IsNotExist(err) { return false, nil }
-    return true, err
-}
-
-/**
 * Add User without Password
 */
 func addUser(username string) error {
     // Add user
 	cmd  := "useradd"
-	args := []string{username}
+	args := []string{"-s", "/bin/bash", "-d", "/tmp", username}
     log.Debug("cmd=", cmd, ",args=", args)
     
     c := exec.Command(cmd, args...)
@@ -256,35 +189,5 @@ func setUserPasswd(username string, passwd string) error {
     stdin.Close()
     cmd.Wait()
     return nil
-}
-
-/**
-* Add authorized key for the user with force command.
-*/
-func allowKeyAccess(username string, keyFile string) {
-    forceCommand := `command="flock /tmp/$$ -c \"/usr/sbin/trafficrouter -t $SSH_ORIGINAL_COMMAND\",no-X11-forwarding,no-pty,no-agent-forwarding  %s`
-    
-    // Make home Directory path
-    homeDir := "/home/" + username 
-        
-    key, err := ioutil.ReadFile(keyFile)
-    utils.Check(err) 
-    
-    entry := fmt.Sprintf(forceCommand, key)
-
-    if res, _ := exists(homeDir + "/.ssh"); res != true {
-        err = os.Mkdir(homeDir + "/.ssh", 0700)
-        utils.Check(err)
-        chown(username, homeDir + "/.ssh")
-    }
-
-    data := []byte(entry)
-    // Path for force command script
-    authFile := homeDir + "/.ssh/authorized_keys" 
-    err = ioutil.WriteFile(authFile, data, 0600)
-    utils.Check(err)
-
-    err = chown(username, authFile)
-    utils.Check(err)
 }
 

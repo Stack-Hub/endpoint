@@ -17,6 +17,7 @@ import (
     "fmt"
     "encoding/json"
     "os"
+    "os/user"
     "regexp"
     "strconv"
     "net"
@@ -182,23 +183,15 @@ func SendConfig() {
     fd = utils.LockFile(ppid)
 
     // Get parent process params
-    pproc, pcmd := getProcParam(int32(ppid))
+    _, pcmd := getProcParam(int32(ppid))
     log.Debug("Parent Process cmdline = ", pcmd)
-
-    // Get SSH process ID
-    spid, err := pproc.Ppid()
-    utils.Check(err)
-
-    // Get SSH proc and command line, 
-    _, scmd := getProcParam(spid)
-    log.Debug("SSH Process cmdline = ", scmd)
     
     //Host to store connection information
     var h utils.Host
     h.Pid = ppid
     
     //Get socket connection parameters in host struct
-    getConnParams(spid, &h)
+    getConnParams(int32(ppid), &h)
     
     //Get client config parameters in host struct
     getConfigParams(&h)
@@ -216,15 +209,20 @@ func SendConfig() {
         // Get proc and commandline based on pid
         _, cmd := getProcParam(p)
 
+        // Get Current user
+        u, _ := user.Current()
+                
         // Check if server 
-        ok := match(fmt.Sprintf(`trafficrouter .* -uid %d .*`, os.Getuid()), cmd)
+        ok := match(fmt.Sprintf(`trafficrouter .* -u %s.*`, u.Username), cmd)
         // If found send host var to server
         if ok {    
             log.Debug("Found Server Process %s, pid = %d\n", cmd, p)
             writeHost(p, &h)
+            break
         }            
     }
     
+    // Wait for Interrupt or Parent exit
     waitForExit(fd)
 
 }

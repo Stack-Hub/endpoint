@@ -40,16 +40,6 @@ func main() {
 			Value: "",
 		},	
         cli.StringFlag{
-			Name:  "priv",
-            Usage: "Private Key to secure connections",
-			Value: "",
-		},	
-        cli.StringFlag{
-			Name:  "pub",
-            Usage: "Public Key to secure connections",
-			Value: "",
-		},	
-        cli.StringFlag{
 			Name:  "needs",
             Usage: "Services needed by Cmd. Format `app:port@laddr:lport` e.g. db:3306@localhost",
 			Value: "",
@@ -78,16 +68,6 @@ func main() {
 			Name:  "usr, u",
             Usage: "Username for local service discovery (Don't set, it is used internally)",
 			Value: "",
-		},	
-        cli.IntFlag{
-			Name:  "uid",
-            Usage: "User ID for local service discovery (Don't set, it is used internally)",
-			Value: -1,
-		},	
-        cli.IntFlag{
-			Name:  "mode",
-            Usage: "User Creation mode for local service discovery (Don't set, it is used internally)",
-			Value: -1,
 		},	
     }
     

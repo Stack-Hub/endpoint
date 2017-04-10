@@ -43,7 +43,6 @@ var m * omap.OMap
 var ch chan bool
 var registered bool 
 
-
 /*
  *  Cleanup before exit
  */
@@ -97,8 +96,6 @@ func ConnAddEv(p int, h *utils.Host) {
         log.Debug("Unblocking Registration")
         ch <-true
     }
-    
-    
 }
 
 func ConnRemoveEv(p int, h *utils.Host) {
@@ -116,11 +113,7 @@ func parseNeeds(str string) (string, string, string, string) {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format rhost:rport@lhost(:lport)?\n", str)))
 	}
     
-    if len(parts) > 4 {
-        return parts[1], parts[2], parts[3], parts[5]
-    } else {
-        return parts[1], parts[2], parts[3], ""
-    }
+    return parts[1], parts[2], parts[3], parts[5]
 }
 
 func parseRegister(str string) (string, string, string, bool) {
@@ -169,9 +162,11 @@ func TrafficRouter(c *cli.Context) error {
         return nil
     }
 
+    isDebug := c.Bool("D")
+    
     passwd := c.String("passwd")
     if passwd == "" {
-        log.Fatal("Empty password. Please provide password")
+        log.Fatal("Empty password. Please provide password with --passwd option")
     }
         
     // Wait for Needed service before registering.
@@ -182,30 +177,23 @@ func TrafficRouter(c *cli.Context) error {
         if lport == "" {
             lport = rport
         }
+        
         log.Debug("raddr=", rhost, ",rport=", rport, ",laddr=", lhost, ",lport=", lport)
 
+        // Form username based on rhost.rport
+        uname  := rhost + "." + rport
+        
         // Get user options
         usr  := c.String("usr")
-        uid  := c.Int("uid")
-        mode := c.Int("mode")
-        log.Debug("usr=", usr, ",uid=", uid, ",mode=", mode)
+        log.Debug("usr=", usr)
 
         // No user options indicate user invocation.
         // Create user and invoke again with user information.
         if usr == "" {
-            // Create new user
-            uname  := rhost + "." + rport
-            u := user.NewUserWithPassword(uname, passwd)
-            log.Debug("user=", u)
-
-            args := make([]string, len(os.Args) + 6)
+            args := make([]string, len(os.Args) + 2)
             copy(args, os.Args)
             args[len(os.Args)]     = "-u"
-            args[len(os.Args) + 1] = u.Name
-            args[len(os.Args) + 2] = "-uid"
-            args[len(os.Args) + 3] = strconv.Itoa(u.Uid)
-            args[len(os.Args) + 4] = "-mode"
-            args[len(os.Args) + 5] = strconv.Itoa(u.Mode)
+            args[len(os.Args) + 1] = uname
 
             // Swamp new exec with user argument. 
             // There arguments are used for local service discovery by clients
@@ -216,8 +204,8 @@ func TrafficRouter(c *cli.Context) error {
             utils.Check(err)            
         }
         
-        u := &user.User{Name: usr, Uid: uid, Mode: mode}
-        user.RestoreUser(u)
+        u := user.NewUserWithPassword(uname, passwd)
+        log.Debug("user=", u)
         defer u.Delete()
         
         // Initialize Ordered map and server events.
@@ -269,8 +257,8 @@ func TrafficRouter(c *cli.Context) error {
                     log.Debug("Checking ", rdns)
                     raddrs, err := net.LookupHost(rdns)
                     if err != nil && len(raddrs) > 0 {
-                        cmd := client.StartWithPasswd(uname, passwd, rdns, lport)
-                        defer client.Stop(cmd)
+                        cmd := client.Connect(uname, passwd, rdns, lport, isDebug)
+                        defer client.Disconnect(cmd)
                         log.Debug(cmd)          
                         i++
                     } 
@@ -278,8 +266,8 @@ func TrafficRouter(c *cli.Context) error {
                     time.Sleep( time.Duration(poll) * 1000 * time.Millisecond)
                 }
             } else {
-                cmd := client.StartWithPasswd(uname, passwd, rhost, lport)
-                defer client.Stop(cmd)
+                cmd := client.Connect(uname, passwd, rhost, lport, isDebug)
+                defer client.Disconnect(cmd)
                 log.Debug(cmd)                                                    
             }
             
