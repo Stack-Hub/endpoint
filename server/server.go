@@ -42,19 +42,19 @@ type ConnRemovedEvent func(p int, h *utils.Host)
 /*
  *  Add connection to map and invoke callback.
  */
-func addConnection(h *utils.Host, a ConnAddedEvent) {
+func addConnection(m *omap.OMap, h *utils.Host, a ConnAddedEvent) {
     p := h.Pid
     
     conns[p] = h
 
     //Send AddedEvent Callback.
-    a(p, h)
+    a(m, p, h)
 }
 
 /*
  *  Remove connection from map and invoke callback.
  */
-func removeConnection(h *utils.Host, r ConnRemovedEvent) {
+func removeConnection(m *omap.OMap, h *utils.Host, r ConnRemovedEvent) {
     p := h.Pid
     
     h, ok := conns[p]
@@ -62,7 +62,7 @@ func removeConnection(h *utils.Host, r ConnRemovedEvent) {
         delete(conns, p)
         
         //Send RemoveEvent Callback
-        r(p, h)
+        r(m, p, h)
     }
 }
 
@@ -86,7 +86,7 @@ func waitForClose(p int) bool {
 /*
  *  Handle Socket connection
  */
-func handleClient(c net.Conn, a ConnAddedEvent, r ConnRemovedEvent) {
+func handleClient(c net.Conn, m *omap.OMap, a ConnAddedEvent, r ConnRemovedEvent) {
     var h utils.Host
     var b bytes.Buffer
     
@@ -99,10 +99,10 @@ func handleClient(c net.Conn, a ConnAddedEvent, r ConnRemovedEvent) {
     err := json.Unmarshal(b.Bytes(), &h) 
     utils.Check(err)
     
-    addConnection(&h, a)
+    addConnection(m, &h, a)
     
     if waitForClose(int(h.Pid)) == true {
-        removeConnection(&h, r)
+        removeConnection(m, &h, r)
     }
 }
 
@@ -110,7 +110,7 @@ func handleClient(c net.Conn, a ConnAddedEvent, r ConnRemovedEvent) {
  *  Monitor incoming connections and invoke callback
  *  when client is added or removed.
  */
-func Monitor(a ConnAddedEvent, r ConnRemovedEvent) {
+func Monitor(m *omap.OMap, a ConnAddedEvent, r ConnRemovedEvent) {
     // Initialize connections map to store active connections.
     conns = make(map[int]*utils.Host)
     
@@ -126,7 +126,7 @@ func Monitor(a ConnAddedEvent, r ConnRemovedEvent) {
         fd, err := l.Accept()
         utils.Check(err)
 
-        go handleClient(fd, a, r)
+        go handleClient(fd, m, a, r)
     }
     
 

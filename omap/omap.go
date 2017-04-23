@@ -65,6 +65,22 @@ func (m *OMap) Remove(key int) *Element {
     return e
 }
 
+func (m *OMap) Remove(e *Element)  {
+    
+    if (e != nil) {
+        //Get key value
+        key := e.keyPtr.Value.(int)
+        
+        //Remove key from keylist
+        m.keyList.Remove(e.keyPtr)
+
+        //Remove element from map
+        delete(m.elements, key)        
+    }
+    
+    return e
+}
+
 
 func (m *OMap) Get(key int) *Element {
     //Get Element from maps

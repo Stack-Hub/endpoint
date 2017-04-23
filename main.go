@@ -37,16 +37,16 @@ func main() {
         cli.StringFlag{
 			Name:  "passwd, p",
 			Usage: "Password to secure connections",
-			Value: "",
+			Value: "123456789",
 		},	
         cli.StringFlag{
-			Name:  "needs",
-            Usage: "Services needed by Cmd. Format `app:port@laddr:lport` e.g. db:3306@localhost",
+			Name:  "require",
+            Usage: "Services required for application. Format `app:port@laddr:lport` e.g. db:3306@localhost",
 			Value: "",
 		},	
         cli.StringFlag{
 			Name:  "register",
-            Usage: "Services Cmd should register. Format `app:port@raddr` e.g. db:3306@app or db:3360@app-*",
+            Usage: "Services Cmd should register. Format `app-1:port@raddr, app-1:port@raddr` e.g. db:3306@app or db:3360@app-*",
 			Value: "",
 		},	
         cli.BoolFlag{
@@ -66,8 +66,13 @@ func main() {
 		},	
         cli.StringFlag{
 			Name:  "usr, u",
-            Usage: "Username for local service discovery (Don't set, it is used internally)",
+            Usage: "Usernames used for local service discovery (Don't set, it is used internally)",
 			Value: "",
+		},	
+        cli.BoolFlag{
+			Name:  "swmp",
+            Usage: "Flag to indicate that process was swamped for local service discovery (Don't set, it is used internally)",
+			Value: false,
 		},	
     }
     
