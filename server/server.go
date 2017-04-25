@@ -16,7 +16,6 @@ package server
 import (
     "log"
     "encoding/json"
-    "os"
     "os/exec"
     "strconv"
     "bytes"
@@ -25,6 +24,7 @@ import (
     "fmt"
     
     "../utils"
+    "../omap"
 )
 
 /*
@@ -35,26 +35,25 @@ var conns map[int]*utils.Host
 /*
  *  Event callback for connection add & remove.
  */
-type ConnAddedEvent   func(p int, h *utils.Host)
-type ConnRemovedEvent func(p int, h *utils.Host)
- 
+type ConnAddedEvent   func(m *omap.OMap, uname string, p int, h *utils.Host)
+type ConnRemovedEvent func(m *omap.OMap, uname string, p int, h *utils.Host)
 
 /*
  *  Add connection to map and invoke callback.
  */
-func addConnection(m *omap.OMap, h *utils.Host, a ConnAddedEvent) {
+func addConnection(m *omap.OMap, uname string, h *utils.Host, a ConnAddedEvent) {
     p := h.Pid
     
     conns[p] = h
 
     //Send AddedEvent Callback.
-    a(m, p, h)
+    a(m, uname, p, h)
 }
 
 /*
  *  Remove connection from map and invoke callback.
  */
-func removeConnection(m *omap.OMap, h *utils.Host, r ConnRemovedEvent) {
+func removeConnection(m *omap.OMap, uname string, h *utils.Host, r ConnRemovedEvent) {
     p := h.Pid
     
     h, ok := conns[p]
@@ -62,7 +61,7 @@ func removeConnection(m *omap.OMap, h *utils.Host, r ConnRemovedEvent) {
         delete(conns, p)
         
         //Send RemoveEvent Callback
-        r(m, p, h)
+        r(m, uname, p, h)
     }
 }
 
@@ -86,7 +85,7 @@ func waitForClose(p int) bool {
 /*
  *  Handle Socket connection
  */
-func handleClient(c net.Conn, m *omap.OMap, a ConnAddedEvent, r ConnRemovedEvent) {
+func handleClient(c net.Conn, m *omap.OMap, uname string, a ConnAddedEvent, r ConnRemovedEvent) {
     var h utils.Host
     var b bytes.Buffer
     
@@ -99,10 +98,10 @@ func handleClient(c net.Conn, m *omap.OMap, a ConnAddedEvent, r ConnRemovedEvent
     err := json.Unmarshal(b.Bytes(), &h) 
     utils.Check(err)
     
-    addConnection(m, &h, a)
+    addConnection(m, uname, &h, a)
     
     if waitForClose(int(h.Pid)) == true {
-        removeConnection(m, &h, r)
+        removeConnection(m, uname, &h, r)
     }
 }
 
@@ -110,23 +109,23 @@ func handleClient(c net.Conn, m *omap.OMap, a ConnAddedEvent, r ConnRemovedEvent
  *  Monitor incoming connections and invoke callback
  *  when client is added or removed.
  */
-func Monitor(m *omap.OMap, a ConnAddedEvent, r ConnRemovedEvent) {
+func Monitor(m *omap.OMap, uname string, a ConnAddedEvent, r ConnRemovedEvent) {
     // Initialize connections map to store active connections.
     conns = make(map[int]*utils.Host)
     
     // Get process pid and open unix socket.
-    p := os.Getpid()
-    f := utils.RUNPATH + strconv.Itoa(p) + ".sock"
+    f := utils.RUNPATH + uname + ".sock"
     
-    l, _ := net.Listen("unix", f)
-    fmt.Printf("Waiting for Connections\n")
+    l, err := net.Listen("unix", f)
+    utils.Check(err)
+    fmt.Println("Waiting for Connections on ", f)
 
     for {
         // Handle incoming conection.
         fd, err := l.Accept()
         utils.Check(err)
 
-        go handleClient(fd, m, a, r)
+        go handleClient(fd, m, uname, a, r)
     }
     
 

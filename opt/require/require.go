@@ -16,34 +16,35 @@ package require
 import (
     "fmt"
     "net"
-    "os"
     "io"
     "strconv"
     "regexp"
     "errors"
-    "syscall"
     "strings"
-    "os/exec"
     
-    "./omap"
-    "./user"
-    "./server"
-    "./utils"
+    "../../omap"
+    "../../user"
+    "../../server"
+    "../../utils"
     log "github.com/Sirupsen/logrus"
     "github.com/urfave/cli"
 )
 
-type callback func(string, string, string, string)
+type parsecb func(string, string, string, string, string)
+type callback func()
 
-func split(opts string){
-    return strings.Split(opt, ",")
+var cbTicker int = 0
+var ayncCB callback = nil 
+
+func split(opts string) []string {
+    return strings.Split(opts, ",")
 }
 
-func join(opts []string) string{
+func join(opts []string) string {
     return strings.Join(opts, ",")
 }
 
-func forEach(opts string, cb callback) {
+func forEach(opts string, cb parsecb) {
     optArr := split(opts)
 
     for _, opt := range optArr {
@@ -59,7 +60,7 @@ func forEach(opts string, cb callback) {
                   "laddr=", lhost, ",",
                   "lport=", lport)
         
-        cb(rhost, rport, lhost, lport)
+        cb(opt, rhost, rport, lhost, lport)
     }
 }
 
@@ -89,7 +90,7 @@ func handleRequest(m *omap.OMap, in net.Conn) {
 
             // Connection failed, remove connection information from the list
             if err != nil {
-                m.Remove(h)
+                m.RemoveEl(h)
                 continue
             }
 
@@ -101,47 +102,64 @@ func handleRequest(m *omap.OMap, in net.Conn) {
     } 
 }
 
-func ConnAddEv(m *omap.OMap, p int, h *utils.Host) {
-    m.Add(p, h)
-    fmt.Printf("Connected %s:%d on Port %d\n", 
-               h.RemoteIP, 
-               h.AppPort, 
-               h.ListenPort)
-}
+func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 
-func ConnRemoveEv(m *omap.OMap, p int, h *utils.Host) {
-    m.Remove(p)
-    fmt.Printf("Removed %s:%d from Port %d\n", 
-               h.RemoteIP, 
-               h.AppPort, 
-               h.ListenPort)
-}
-
-func process(c *cli.Context, opts string) {
-
-    // Get user options
-    swamped := c.String("swmp")
-    log.Debug("swamped=", swamped)
-
-    //Map to store Usernames
-    unames := make(map [string]string, 1)
+    // If this is first connection then decrement callback ticker
+    if m.Len() == 0 {
+        cbTicker--
+    }
     
-    if swamped {
+    m.Add(p, h)
+    fmt.Printf("Connected %s from %s:%d at Port %d\n", 
+               uname, 
+               h.RemoteIP, 
+               h.AppPort, 
+               h.ListenPort)
+    
+    // All required connections are established
+    // inform the caller with async callback and 
+    // unset cbTicker.
+    if cbTicker == 0 {
+        ayncCB()
+        cbTicker = -1
+    }
+}
+
+func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
+    m.Remove(p)
+    fmt.Printf("Removed %s from %s:%d at Port %d\n", 
+               uname, 
+               h.RemoteIP, 
+               h.AppPort, 
+               h.ListenPort)
+}
+
+func Process(c *cli.Context, cb callback) {
+
+    opts := c.String("require")
+    if len(opts) > 0 {
+
         // Get password
         passwd := c.String("passwd")
+        
+        ayncCB = cb
 
-        forEach(opt, func(rhost string, rport string, lhost string, lport string) {
+        forEach(opts, func(opt string, rhost string, rport string, lhost string, lport string) {
             uname := rhost + "." + rport
             log.Debug("uname=", uname)
 
             //Create User
             u := user.NewUserWithPassword(uname, passwd)
             log.Debug("user=", u)
-            defer u.Delete()
 
             // Initialize Ordered map and server events.
             m := omap.New()
-            go server.Monitor(ConnAddEv, ConnRemoveEv)
+
+            // Increment callback ticker.
+            cbTicker++
+            
+            // Monitor unix listening socker based on uname
+            go server.Monitor(m, uname, ConnAddEv, ConnRemoveEv)
 
             addr := fmt.Sprintf("%s:%s", lhost, lport)
             log.Debug("addr=", addr)
@@ -149,9 +167,6 @@ func process(c *cli.Context, opts string) {
             fmt.Printf("Listening on %s\n", addr)
             l, err := net.Listen("tcp", addr)
             utils.Check(err)
-
-            // Close the listener when the application closes.
-            defer l.Close()
 
             go func() {
                 for {
@@ -164,31 +179,10 @@ func process(c *cli.Context, opts string) {
                 }                
             }()
         })
-        
+
     } else {
-        
-        forEach(opt, func(rhost string, rport string, lhost string, lport string) {
-            uname := rhost + "." + rport
-            log.Debug("uname=", uname)
-
-            // Form username based on rhost.rport and add to map
-            unames[opt] := uname
-        })        
-
-        // Swamp new exec with user argument. 
-        // There arguments are used for local service discovery by clients
-        args := make([]string, len(os.Args) + 2)
-        copy(args, os.Args)
-        args[len(os.Args)]     = "-u"
-        args[len(os.Args) + 1] = join(uname)
-
-        log.Println("Swamping new exec")
-        execf, err := osext.Executable()
-        utils.Check(err)
-        err = syscall.Exec(execf, args, os.Environ())
-
-        //This shouln't be executed
-        utils.Check(err)                    
+        // If require is empty trigger callback.
+        cb()
     }
     
 

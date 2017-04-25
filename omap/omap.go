@@ -65,7 +65,8 @@ func (m *OMap) Remove(key int) *Element {
     return e
 }
 
-func (m *OMap) Remove(e *Element)  {
+
+func (m *OMap) RemoveEl(e *Element) *Element {
     
     if (e != nil) {
         //Get key value

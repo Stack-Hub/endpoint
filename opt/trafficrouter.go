@@ -40,8 +40,6 @@ import (
     "github.com/kardianos/osext"
 )
 
-var m * omap.OMap
-
 /*
  *  Cleanup before exit
  */
@@ -120,9 +118,7 @@ func TrafficRouter(c *cli.Context) error {
     }
         
     // Wait for Needed service before registering.
-    if (c.String("require") != "") {
-        require.process(c.String("require"))
-    }
+    require.Process(c)
     
     /* Client mode */
     if (c.String("register") != "") {

@@ -18,8 +18,6 @@ import (
     "encoding/json"
     "os"
     "os/user"
-    "regexp"
-    "strconv"
     "net"
     "os/signal"
     "syscall"
@@ -129,31 +127,12 @@ func getConfigParams(h *utils.Host) {
 }
 
 /*
- *  Match string with regex.
+ *  Send host struct to uname socket
  */
-func match(regex string, str string) bool {
-
-    if len(str) > 0 {
-        // find server with current user ID using command line match 
-        ok, err := regexp.MatchString(regex, str)
-        utils.Check(err)
-
-        // If found send host var to server
-        if ok {
-            return true
-        }
-    }
-    
-    return false
-}
-
-/*
- *  Match string with regex.
- */
-func writeHost(pid int32, h *utils.Host) {
+func writeHost(uname string, h *utils.Host) {
 
     // Form Unix socket based on pid 
-    f := utils.RUNPATH + strconv.Itoa(int(pid)) + ".sock"
+    f := utils.RUNPATH + uname + ".sock"
     log.Debug("SOCK: ", f)
     c, err := net.Dial("unix", f)
     utils.Check(err)
@@ -199,28 +178,11 @@ func SendConfig() {
     //Log complete host struct.
     log.Println(h)
     
-    // Scan through all system processes to find server
-    // based on current user id.
-    // This is done by regex matching the UID with 
-    // commandline of server
-    pids, _ := ps.Pids()
-    for _, p := range pids  {
-        
-        // Get proc and commandline based on pid
-        _, cmd := getProcParam(p)
+    // Get Current user
+    u, _ := user.Current()
 
-        // Get Current user
-        u, _ := user.Current()
-                
-        // Check if server 
-        ok := match(fmt.Sprintf(`trafficrouter .* -u %s.*`, u.Username), cmd)
-        // If found send host var to server
-        if ok {    
-            log.Debug("Found Server Process %s, pid = %d\n", cmd, p)
-            writeHost(p, &h)
-            break
-        }            
-    }
+    //Send host struct to user name unix socket.
+    writeHost(u.Username, &h)
     
     // Wait for Interrupt or Parent exit
     waitForExit(fd)

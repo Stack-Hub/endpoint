@@ -15,12 +15,173 @@ package main
 
 import (
     "os"
+    "os/signal"
+    "os/exec"
+    "regexp"
+    "fmt"
+    "errors"
+    "syscall"
+    "strconv"
+    "strings"
+    "time"
+    "bufio"
+    "net"
     
+    "./client"
+    "./forcecmd"
+    "./user"
+    "./utils"
+    "./opt/require"
     "./version"
     log "github.com/Sirupsen/logrus"
     "github.com/urfave/cli"
 )
     
+/*
+ *  Cleanup before exit
+ */
+func cleanup() {    
+    log.Debug("Cleaning up")
+    forcecmd.Cleanup()
+    user.Cleanup()
+}
+
+/*
+ *  Install Signal handler for proper cleanup.
+ */
+func installHandler() {
+    sigs := make(chan os.Signal, 1)    
+    signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+    go func() {
+        sig := <-sigs
+        log.Debug(sig)
+        cleanup()
+        os.Exit(1)
+    }()    
+}
+
+
+func parseRegister(str string) (string, string, string, bool) {
+    var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:\*]+)(\*)?$`)
+	parts := expr.FindStringSubmatch(str)
+	if len(str) == 0 {
+        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost(*)?\n", str)))
+	}
+    
+    wildcard := false
+    
+    log.Debug(parts)
+    if parts[4] == "*" {
+        wildcard = true
+    }
+    
+    return parts[1], parts[2], parts[3], wildcard    
+}
+
+func TrafficRouter(c *cli.Context) error {
+
+    /*
+     * Install Signal handlers for proper cleanup.
+     */
+    installHandler()
+    
+    /*
+     * Global error handling.
+     * Cleanup and exit.
+     */
+    defer func() {
+        if r := recover(); r != nil {
+            log.Debug("Recovered ", r)
+            cleanup()
+            os.Exit(1)
+        }
+    }()    
+        
+    // Send message for Force Command mode and return.
+    if (c.Bool("f") == true) {
+        forcecmd.SendConfig()
+        return nil
+    }
+
+    isDebug := c.Bool("D")
+    
+    passwd := c.String("passwd")
+    if passwd == "" {
+        log.Fatal("Empty password. Please provide password with --passwd option")
+    }
+        
+    // Wait for Needed service before registering.
+    require.Process(c, func() {
+        /* Client mode */
+        if (c.String("register") != "") {
+            lhost, lport, rhost, wc := parseRegister(c.String("register"))
+
+            log.Println(lhost, lport, rhost, wc)
+            uname := lhost + "." + lport
+
+            if wc == true {
+                i := 1
+                for {                    
+                    rdns := rhost + strconv.Itoa(i)
+                    //Check if host exists
+                    log.Debug("Checking ", rdns)
+                    raddrs, err := net.LookupHost(rdns)
+                    if err != nil && len(raddrs) > 0 {
+                        cmd := client.Connect(uname, passwd, rdns, lport, isDebug)
+                        defer client.Disconnect(cmd)
+                        log.Debug(cmd)          
+                        i++
+                    } 
+
+                    poll := c.Int("poll-interval")
+                    if poll <= 0 {
+                        break
+                    }
+                    
+                    time.Sleep( time.Duration(poll) * 1000 * time.Millisecond)
+                }
+            } else {
+                cmd := client.Connect(uname, passwd, rhost, lport, isDebug)
+                defer client.Disconnect(cmd)
+                log.Debug(cmd)                                                    
+            }
+
+            utils.BlockForever()
+        }         
+
+        if (c.String("cmd") != "") {
+            cmdargs := strings.Split(c.String("cmd")," ")
+            cmd := cmdargs[0]
+            args := cmdargs[1:]
+            log.Debug("Executing ", cmd, args)
+            c := exec.Command(cmd, args...)
+            stdout, _ := c.StdoutPipe()
+            stderr, _ := c.StderrPipe()
+
+            stdoutscanner := bufio.NewScanner(stdout)
+            stderrscanner := bufio.NewScanner(stderr)
+            go func() {
+                for stdoutscanner.Scan() {
+                    fmt.Println(stdoutscanner.Text())
+                }
+            }()
+            go func() {
+                for stderrscanner.Scan() {
+                    fmt.Println(stderrscanner.Text())
+                }
+            }()
+
+
+            c.Start()
+        }
+    })
+    
+
+    utils.BlockForever()
+    return nil
+}
+
+
 func main() {
 
     app := cli.NewApp()
@@ -46,12 +207,12 @@ func main() {
 		},	
         cli.StringFlag{
 			Name:  "register",
-            Usage: "Services Cmd should register. Format `app-1:port@raddr, app-1:port@raddr` e.g. db:3306@app or db:3360@app-*",
+            Usage: "Register this service. Format `app:port@raddr` e.g. app:80@lb or app:80@lb-*",
 			Value: "",
 		},	
         cli.BoolFlag{
 			Name:  "forcecmd, f",
-            Usage: "Use as force command (Don't set, it is used internally)",
+            Usage: "Use as SSH force command (used internally)",
 			Hidden: false,
 		},	
         cli.StringFlag{
@@ -61,18 +222,8 @@ func main() {
 		},	
         cli.IntFlag{
 			Name:  "poll-interval",
-            Usage: "Interval to detect new hosts, used with wildcard in --register option",
+            Usage: "Interval to detect new hosts, used for wildcard with --register option",
 			Value: 1,
-		},	
-        cli.StringFlag{
-			Name:  "usr, u",
-            Usage: "Usernames used for local service discovery (Don't set, it is used internally)",
-			Value: "",
-		},	
-        cli.BoolFlag{
-			Name:  "swmp",
-            Usage: "Flag to indicate that process was swamped for local service discovery (Don't set, it is used internally)",
-			Value: false,
 		},	
     }
     
