@@ -17,21 +17,14 @@ import (
     "os"
     "os/signal"
     "os/exec"
-    "regexp"
-    "fmt"
-    "errors"
     "syscall"
-    "strconv"
-    "strings"
-    "time"
-    "bufio"
-    "net"
     
-    "./client"
+    "./server"
     "./forcecmd"
     "./user"
     "./utils"
     "./opt/require"
+    "./opt/register"
     "./version"
     log "github.com/Sirupsen/logrus"
     "github.com/urfave/cli"
@@ -43,6 +36,7 @@ import (
 func cleanup() {    
     log.Debug("Cleaning up")
     forcecmd.Cleanup()
+    server.Cleanup()
     user.Cleanup()
 }
 
@@ -60,25 +54,7 @@ func installHandler() {
     }()    
 }
 
-
-func parseRegister(str string) (string, string, string, bool) {
-    var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:\*]+)(\*)?$`)
-	parts := expr.FindStringSubmatch(str)
-	if len(str) == 0 {
-        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost(*)?\n", str)))
-	}
-    
-    wildcard := false
-    
-    log.Debug(parts)
-    if parts[4] == "*" {
-        wildcard = true
-    }
-    
-    return parts[1], parts[2], parts[3], wildcard    
-}
-
-func TrafficRouter(c *cli.Context) error {
+func main() {
 
     /*
      * Install Signal handlers for proper cleanup.
@@ -96,94 +72,8 @@ func TrafficRouter(c *cli.Context) error {
             os.Exit(1)
         }
     }()    
-        
-    // Send message for Force Command mode and return.
-    if (c.Bool("f") == true) {
-        forcecmd.SendConfig()
-        return nil
-    }
 
-    isDebug := c.Bool("D")
     
-    passwd := c.String("passwd")
-    if passwd == "" {
-        log.Fatal("Empty password. Please provide password with --passwd option")
-    }
-        
-    // Wait for Needed service before registering.
-    require.Process(c, func() {
-        /* Client mode */
-        if (c.String("register") != "") {
-            lhost, lport, rhost, wc := parseRegister(c.String("register"))
-
-            log.Println(lhost, lport, rhost, wc)
-            uname := lhost + "." + lport
-
-            if wc == true {
-                i := 1
-                for {                    
-                    rdns := rhost + strconv.Itoa(i)
-                    //Check if host exists
-                    log.Debug("Checking ", rdns)
-                    raddrs, err := net.LookupHost(rdns)
-                    if err != nil && len(raddrs) > 0 {
-                        cmd := client.Connect(uname, passwd, rdns, lport, isDebug)
-                        defer client.Disconnect(cmd)
-                        log.Debug(cmd)          
-                        i++
-                    } 
-
-                    poll := c.Int("poll-interval")
-                    if poll <= 0 {
-                        break
-                    }
-                    
-                    time.Sleep( time.Duration(poll) * 1000 * time.Millisecond)
-                }
-            } else {
-                cmd := client.Connect(uname, passwd, rhost, lport, isDebug)
-                defer client.Disconnect(cmd)
-                log.Debug(cmd)                                                    
-            }
-
-            utils.BlockForever()
-        }         
-
-        if (c.String("cmd") != "") {
-            cmdargs := strings.Split(c.String("cmd")," ")
-            cmd := cmdargs[0]
-            args := cmdargs[1:]
-            log.Debug("Executing ", cmd, args)
-            c := exec.Command(cmd, args...)
-            stdout, _ := c.StdoutPipe()
-            stderr, _ := c.StderrPipe()
-
-            stdoutscanner := bufio.NewScanner(stdout)
-            stderrscanner := bufio.NewScanner(stderr)
-            go func() {
-                for stdoutscanner.Scan() {
-                    fmt.Println(stdoutscanner.Text())
-                }
-            }()
-            go func() {
-                for stderrscanner.Scan() {
-                    fmt.Println(stderrscanner.Text())
-                }
-            }()
-
-
-            c.Start()
-        }
-    })
-    
-
-    utils.BlockForever()
-    return nil
-}
-
-
-func main() {
-
     app := cli.NewApp()
 	app.Name = "trafficrouter"
 	app.Version = version.FullVersion()
@@ -227,8 +117,6 @@ func main() {
 		},	
     }
     
-    app.Action = TrafficRouter
-
     app.Before = func(c *cli.Context) error {
 		if c.Bool("debug") {
 			log.SetLevel(log.DebugLevel)
@@ -237,6 +125,38 @@ func main() {
 		return nil
 	}
 
+    app.Action = func (c *cli.Context) error {
+        // Send message for Force Command mode and return.
+        if (c.Bool("f") == true) {
+            forcecmd.SendConfig()
+            return nil
+        }
+
+        passwd := c.String("passwd")
+        if passwd == "" {
+            log.Fatal("Empty password. Please provide password with --passwd option")
+        }
+
+        // Wait for Needed service before registering.
+        require.Process(c, func() {
+            register.Process(c, func() {
+                cmdargs := c.Args()
+                if len(cmdargs) > 0 {
+                    cmd := cmdargs[0]
+                    args := cmdargs[1:]
+                    log.Debug("Executing ", cmd, args)
+                    proc := exec.Command(cmd, args...)
+                    proc.Stdout = os.Stdout
+                    proc.Stderr = os.Stderr
+                    proc.Run()
+                }
+            })
+        })    
+
+        utils.BlockForever()
+        return nil        
+    }
+    
     if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}

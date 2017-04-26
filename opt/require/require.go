@@ -68,7 +68,7 @@ func parse(str string) (string, string, string, string) {
     var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:]+)(:([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
 	if len(str) == 0 {
-        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format rhost:rport@lhost(:lport)?\n", str)))
+        utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport@lhost(:lport)?\n", str)))
 	}
     
     return parts[1], parts[2], parts[3], parts[5]
@@ -120,7 +120,9 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     // inform the caller with async callback and 
     // unset cbTicker.
     if cbTicker == 0 {
-        ayncCB()
+        if ayncCB != nil {
+            ayncCB()
+        }
         cbTicker = -1
     }
 }
@@ -182,7 +184,9 @@ func Process(c *cli.Context, cb callback) {
 
     } else {
         // If require is empty trigger callback.
-        cb()
+        if cb != nil {
+            cb()
+        }
     }
     
 

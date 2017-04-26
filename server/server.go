@@ -14,23 +14,43 @@
 package server
 
 import (
-    "log"
     "encoding/json"
+    "os"
     "os/exec"
     "strconv"
     "bytes"
     "io"
     "net"
     "fmt"
+    "syscall"
     
     "../utils"
     "../omap"
+    log "github.com/Sirupsen/logrus"
 )
 
 /*
- *  Map for holding active connections.
+ *  Map for holding active connections and socket information.
  */
-var conns map[int]*utils.Host
+var conns map[*omap.OMap]map[int]*utils.Host
+var sockFiles map[*omap.OMap]string
+
+/*
+ * Cleanup on termination.
+ */
+func Cleanup() {
+    for _, m := range conns {
+        for _, h := range m {
+            log.Debug("Server killing ", h.Pid)
+            syscall.Kill(h.Pid, syscall.SIGINT)
+        }
+    }
+    
+    for _, f := range sockFiles {
+        os.Remove(f)
+    }
+}
+
 
 /*
  *  Event callback for connection add & remove.
@@ -44,7 +64,10 @@ type ConnRemovedEvent func(m *omap.OMap, uname string, p int, h *utils.Host)
 func addConnection(m *omap.OMap, uname string, h *utils.Host, a ConnAddedEvent) {
     p := h.Pid
     
-    conns[p] = h
+    if conns[m] == nil {
+        conns[m] = make(map[int]*utils.Host, 1)
+    }
+    conns[m][p] = h
 
     //Send AddedEvent Callback.
     a(m, uname, p, h)
@@ -56,9 +79,9 @@ func addConnection(m *omap.OMap, uname string, h *utils.Host, a ConnAddedEvent) 
 func removeConnection(m *omap.OMap, uname string, h *utils.Host, r ConnRemovedEvent) {
     p := h.Pid
     
-    h, ok := conns[p]
+    h, ok := conns[m][p]
     if ok {
-        delete(conns, p)
+        delete(conns[m], p)
         
         //Send RemoveEvent Callback
         r(m, uname, p, h)
@@ -111,10 +134,12 @@ func handleClient(c net.Conn, m *omap.OMap, uname string, a ConnAddedEvent, r Co
  */
 func Monitor(m *omap.OMap, uname string, a ConnAddedEvent, r ConnRemovedEvent) {
     // Initialize connections map to store active connections.
-    conns = make(map[int]*utils.Host)
+    conns = make(map[*omap.OMap]map[int]*utils.Host, 1)
+    sockFiles = make(map[*omap.OMap]string, 1)
     
     // Get process pid and open unix socket.
     f := utils.RUNPATH + uname + ".sock"
+    sockFiles[m] = f
     
     l, err := net.Listen("unix", f)
     utils.Check(err)
