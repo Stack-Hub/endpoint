@@ -46,43 +46,56 @@ func parse(str string) (string, string, string, bool) {
     return parts[1], parts[2], parts[3], wildcard    
 }
 
-func Process(c *cli.Context, cb callback) {
+func poll(lhost string, lport string, rhost string, passwd string, poll int, isDebug bool) {
     
-    isDebug := c.Bool("D")
+    uname := lhost + "." + lport
+    
+    go func () {
+        for {                    
+            for i := 1; i<10; i++ {
+                dns := rhost + strconv.Itoa(i)
 
-    // Get password
+                //Check if host exists
+                log.Debug("Checking ", dns)
+                raddr, err := net.LookupHost(dns)
+                log.Debug(raddr)
+
+                if err == nil && len(raddr) > 0 {
+                    if !client.IsConnected(dns) {
+                        cmd := client.Connect(uname, passwd, dns, lport, isDebug)
+                        log.Debug(cmd)                    
+                    }
+                } 
+            }    
+
+            if poll <= 0 {
+                return
+            }
+            time.Sleep( time.Duration(poll) * 1000 * time.Millisecond)
+        }        
+    }()
+}
+
+func connect(lhost string, lport string, rhost string, passwd string, isDebug bool) {
+    uname := lhost + "." + lport
+    cmd := client.Connect(uname, passwd, rhost, lport, isDebug)
+    log.Debug(cmd)                                                    
+}
+
+func Process(c *cli.Context, cb callback) {
+    isDebug := c.Bool("D")
     passwd := c.String("passwd")
+    pollInt := c.Int("poll-interval")
 
     opts := c.String("register")
     if len(opts) > 0 {
         lhost, lport, rhost, wc := parse(opts)
-
         log.Println(lhost, lport, rhost, wc)
-        uname := lhost + "." + lport
 
         if wc == true {
-            i := 1
-            for {                    
-                rdns := rhost + strconv.Itoa(i)
-                //Check if host exists
-                log.Debug("Checking ", rdns)
-                raddrs, err := net.LookupHost(rdns)
-                if err != nil && len(raddrs) > 0 {
-                    cmd := client.Connect(uname, passwd, rdns, lport, isDebug)
-                    log.Debug(cmd)          
-                    i++
-                } 
-
-                poll := c.Int("poll-interval")
-                if poll <= 0 {
-                    break
-                }
-
-                time.Sleep( time.Duration(poll) * 1000 * time.Millisecond)
-            }
+            poll(lhost, lport, rhost, passwd, pollInt, isDebug)
         } else {
-            cmd := client.Connect(uname, passwd, rhost, lport, isDebug)
-            log.Debug(cmd)                                                    
+            connect(lhost, lport, rhost, passwd, isDebug)      
         }
         
     }

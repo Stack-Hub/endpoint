@@ -21,6 +21,7 @@ import (
     "../utils"
 )
 
+var clients map[string]*exec.Cmd = make(map[string]*exec.Cmd, 1)
 
 func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
 
@@ -51,9 +52,21 @@ func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
     err := c.Start()
     utils.Check(err)
     
+    //Add to Client store
+    clients[h] = c
+    
     return c
 }
 
+func IsConnected(h string) bool {
+    ok := clients[h]
+    
+    if ok != nil {
+        return true
+    }
+    
+    return false
+}
 
 func Disconnect(cmd *exec.Cmd) {
  

@@ -85,7 +85,7 @@ func handleRequest(m *omap.OMap, in net.Conn) {
             // Send a response back to person contacting us.
             in.Close()
         } else {
-            port := strconv.Itoa(int(h.Value.(utils.Host).ListenPort))
+            port := strconv.Itoa(int(h.Value.(*utils.Host).ListenPort))
             out, err := net.Dial("tcp", "127.0.0.1:" + port)
 
             // Connection failed, remove connection information from the list

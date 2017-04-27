@@ -14,16 +14,12 @@
 package forcecmd
 
 import (
-    "fmt"
     "encoding/json"
     "os"
     "os/user"
     "net"
-    "os/signal"
-    "syscall"
 
     "../utils"
-    "golang.org/x/sys/unix"
     netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
     log "github.com/Sirupsen/logrus"    
@@ -36,29 +32,6 @@ var fd int
  */
 func Cleanup() {
     utils.UnlockFile(fd)    
-}
-
-/*
- * Wait for parent to exit.
- */
-func waitForExit(fd int) {
-
-    sigs := make(chan os.Signal, 1)    
-    signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
-    
-    go func() {
-        sig := <-sigs
-        fmt.Println(sig)
-        utils.UnlockFile(fd)
-        os.Exit(1)
-    }()
-
-    flag := unix.SIGHUP
-    if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(flag), 0, 0, 0); err != nil {
-        return
-    }
-    
-    utils.BlockForever()
 }
 
 /*
