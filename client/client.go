@@ -16,12 +16,18 @@ package client
 import (
     "os"
 	"os/exec"
-    "log"
     
     "../utils"
+    log "github.com/Sirupsen/logrus"
 )
 
 var clients map[string]*exec.Cmd = make(map[string]*exec.Cmd, 1)
+
+func wait(cmd *exec.Cmd, addr string){
+    cmd.Wait()
+    delete(clients, addr)
+    log.Debug("Disconnected ", addr)
+}
 
 func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
 
@@ -44,7 +50,8 @@ func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
                      isDebug(),
                      "{\"port\":" + p + "}"}
 
-    log.Println(cmd, args)
+    addr := u + "@" + h
+    log.Debug("Connecting ", addr)
     
 	c := exec.Command(cmd, args...)
     c.Stdout = os.Stdout
@@ -53,13 +60,16 @@ func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
     utils.Check(err)
     
     //Add to Client store
-    clients[h] = c
+    clients[addr] = c
+
+    //Remove client when disconnected
+    go wait(c, addr)
     
     return c
 }
 
-func IsConnected(h string) bool {
-    ok := clients[h]
+func IsConnected(addr string) bool {
+    ok := clients[addr]
     
     if ok != nil {
         return true

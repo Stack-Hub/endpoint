@@ -93,7 +93,9 @@ func LockFile(pid int) int {
     return int(fd)
 }
 
-
+/*
+ * Unlock file to unblock server
+ */
 func UnlockFile(fd int) {
 	err := unix.Flock(fd, syscall.LOCK_UN)
     Check(err)

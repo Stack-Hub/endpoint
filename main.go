@@ -90,30 +90,28 @@ func main() {
 			Usage: "Password to secure connections",
 			Value: "123456789",
 		},	
-        cli.StringFlag{
+        cli.StringSliceFlag{
 			Name:  "require",
             Usage: "Services required for application. Format `app:port@laddr:lport` e.g. db:3306@localhost",
-			Value: "",
 		},	
-        cli.StringFlag{
+        cli.StringSliceFlag{
 			Name:  "register",
             Usage: "Register this service. Format `app:port@raddr` e.g. app:80@lb or app:80@lb-*",
-			Value: "",
 		},	
         cli.BoolFlag{
 			Name:  "forcecmd, f",
             Usage: "Use as SSH force command (used internally)",
 			Hidden: false,
 		},	
-        cli.StringFlag{
-			Name:  "cmd",
-            Usage: "Execute Command",
-			Value: "",
+        cli.IntFlag{
+			Name:  "count",
+            Usage: "Wildcard count",
+			Value: 10,
 		},	
         cli.IntFlag{
-			Name:  "poll-interval",
+			Name:  "interval",
             Usage: "Interval to detect new hosts, used for wildcard with --register option",
-			Value: 1,
+			Value: 10,
 		},	
     }
     
@@ -138,19 +136,20 @@ func main() {
         }
 
         // Wait for Needed service before registering.
-        require.Process(c, func() {
-            register.Process(c, func() {
-                cmdargs := c.Args()
-                if len(cmdargs) > 0 {
-                    cmd := cmdargs[0]
-                    args := cmdargs[1:]
-                    log.Debug("Executing ", cmd, args)
-                    proc := exec.Command(cmd, args...)
-                    proc.Stdout = os.Stdout
-                    proc.Stderr = os.Stderr
-                    proc.Run()
-                }
-            })
+        go require.Process(c, func() {
+
+            register.Process(c)
+
+            cmdargs := c.Args()
+            if len(cmdargs) > 0 {
+                cmd := cmdargs[0]
+                args := cmdargs[1:]
+                log.Debug("Executing ", cmd, args)
+                proc := exec.Command(cmd, args...)
+                proc.Stdout = os.Stdout
+                proc.Stderr = os.Stderr
+                proc.Run()
+            }
         })    
 
         utils.BlockForever()

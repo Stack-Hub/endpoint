@@ -32,8 +32,8 @@ import (
 /*
  *  Map for holding active connections and socket information.
  */
-var conns map[*omap.OMap]map[int]*utils.Host
-var sockFiles map[*omap.OMap]string
+var conns map[*omap.OMap]map[int]*utils.Host = make(map[*omap.OMap]map[int]*utils.Host, 1)
+var sockFiles map[*omap.OMap]string = make(map[*omap.OMap]string, 1)
 
 /*
  * Cleanup on termination.
@@ -43,10 +43,12 @@ func Cleanup() {
         for _, h := range m {
             log.Debug("Server killing ", h.Pid)
             syscall.Kill(h.Pid, syscall.SIGINT)
+            os.Remove(utils.RUNPATH + strconv.Itoa(int(h.Pid)))
         }
     }
     
     for _, f := range sockFiles {
+        log.Debug("Removing ", f)
         os.Remove(f)
     }
 }
@@ -102,6 +104,7 @@ func waitForClose(p int) bool {
         return false
     }
     
+    os.Remove(utils.RUNPATH + strconv.Itoa(p))
     return true
 }
 
@@ -116,15 +119,15 @@ func handleClient(c net.Conn, m *omap.OMap, uname string, a ConnAddedEvent, r Co
     io.Copy(&b, c)
     c.Close()
     
-    log.Printf("Payload: %s\n", b.String())
+    log.Debug("Payload: %s", b.String())
 
     err := json.Unmarshal(b.Bytes(), &h) 
     utils.Check(err)
     
-    addConnection(m, uname, &h, a)
+    go addConnection(m, uname, &h, a)
     
     if waitForClose(int(h.Pid)) == true {
-        removeConnection(m, uname, &h, r)
+        go removeConnection(m, uname, &h, r)
     }
 }
 
@@ -132,11 +135,7 @@ func handleClient(c net.Conn, m *omap.OMap, uname string, a ConnAddedEvent, r Co
  *  Monitor incoming connections and invoke callback
  *  when client is added or removed.
  */
-func Monitor(m *omap.OMap, uname string, a ConnAddedEvent, r ConnRemovedEvent) {
-    // Initialize connections map to store active connections.
-    conns = make(map[*omap.OMap]map[int]*utils.Host, 1)
-    sockFiles = make(map[*omap.OMap]string, 1)
-    
+func Monitor(m *omap.OMap, uname string, a ConnAddedEvent, r ConnRemovedEvent) {    
     // Get process pid and open unix socket.
     f := utils.RUNPATH + uname + ".sock"
     sockFiles[m] = f

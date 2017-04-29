@@ -14,6 +14,7 @@
 package forcecmd
 
 import (
+    "fmt"
     "encoding/json"
     "os"
     "os/user"
@@ -149,7 +150,8 @@ func SendConfig() {
     getConfigParams(&h)
 
     //Log complete host struct.
-    log.Println(h)
+    log.Debug(h)
+    fmt.Println("Connected on port ", h.RemotePort)
     
     // Get Current user
     u, _ := user.Current()

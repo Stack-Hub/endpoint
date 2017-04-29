@@ -27,80 +27,106 @@ import (
     "github.com/urfave/cli"
 )
 
-type callback func()
+/*
+ *  forEach parser callback
+ */
+type parsecb func(string, string, string, string, string)
 
-func parse(str string) (string, string, string, bool) {
+/*
+ *  --regiser option parser logic
+ */
+func parse(str string) (string, string, string, string) {
     var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:\*]+)(\*)?$`)
 	parts := expr.FindStringSubmatch(str)
 	if len(str) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost(*)?\n", str)))
 	}
-    
-    wildcard := false
-    
-    log.Debug(parts)
-    if parts[4] == "*" {
-        wildcard = true
+            
+    return parts[1], parts[2], parts[3], parts[4]
+}
+
+/*
+ *  -regiser options iterater
+ */
+func forEach(opts []string, cb parsecb) {
+    for _, opt := range opts {
+        lhost, lport, rhost, wc := parse(opt)
+
+        log.Debug("laddr=", lhost, ",",
+                  "lport=", lport, ",",
+                  "rhost=", rhost, ",",
+                  "wc=",    wc)
+        
+        cb(opt, lhost, lport, rhost, wc)
     }
-    
-    return parts[1], parts[2], parts[3], wildcard    
 }
 
-func poll(lhost string, lport string, rhost string, passwd string, poll int, isDebug bool) {
+/*
+ *  Periodic poll for remote host to detect the presence
+ *  and connect when available.
+ */
+func poll( opt string, lhost string, lport string, rhost string, 
+           passwd string, interval int, count int, debug bool) {
     
     uname := lhost + "." + lport
-    
-    go func () {
-        for {                    
-            for i := 1; i<10; i++ {
-                dns := rhost + strconv.Itoa(i)
+    for {                    
+        log.Debug("Resolving...", opt)
+        for i := 1; i < count; i++ {
+            dns := rhost + strconv.Itoa(i)
+            
+            //Check if host exists
+            raddr, err := net.LookupHost(dns)
 
-                //Check if host exists
-                log.Debug("Checking ", dns)
-                raddr, err := net.LookupHost(dns)
-                log.Debug(raddr)
+            if err == nil && len(raddr) > 0 {
+                addr := uname + "@" + dns
 
-                if err == nil && len(raddr) > 0 {
-                    if !client.IsConnected(dns) {
-                        cmd := client.Connect(uname, passwd, dns, lport, isDebug)
-                        log.Debug(cmd)                    
-                    }
-                } 
-            }    
+                if !client.IsConnected(addr) {
+                    client.Connect(uname, passwd, dns, lport, debug)
+                }
+            } 
+        }    
 
-            if poll <= 0 {
-                return
-            }
-            time.Sleep( time.Duration(poll) * 1000 * time.Millisecond)
-        }        
-    }()
-}
-
-func connect(lhost string, lport string, rhost string, passwd string, isDebug bool) {
-    uname := lhost + "." + lport
-    cmd := client.Connect(uname, passwd, rhost, lport, isDebug)
-    log.Debug(cmd)                                                    
-}
-
-func Process(c *cli.Context, cb callback) {
-    isDebug := c.Bool("D")
-    passwd := c.String("passwd")
-    pollInt := c.Int("poll-interval")
-
-    opts := c.String("register")
-    if len(opts) > 0 {
-        lhost, lport, rhost, wc := parse(opts)
-        log.Println(lhost, lport, rhost, wc)
-
-        if wc == true {
-            poll(lhost, lport, rhost, passwd, pollInt, isDebug)
-        } else {
-            connect(lhost, lport, rhost, passwd, isDebug)      
+        if interval <= 0 {
+            return
         }
         
-    }
-        
-    if cb != nil {
-        cb()
-    }
+        time.Sleep( time.Duration(interval) * 1000 * time.Millisecond)
+    }        
+}
+
+/*
+ *  Connect to remote host and periodically check the state.
+ */
+func connect(opt string, lhost string, lport string, rhost string, 
+             passwd string, interval int, debug bool) {
+
+    uname := lhost + "." + lport
+    for {                  
+        addr := uname + "@" + rhost
+        if !client.IsConnected(addr) {
+            fmt.Println("Connecting...", opt)
+            client.Connect(uname, passwd, rhost, lport, debug)
+        }
+        time.Sleep( time.Duration(interval) * 1000 * time.Millisecond)
+    }        
+}
+
+/*
+ *  Process --regiser options
+ */
+func Process(c *cli.Context) {
+    debug := c.Bool("D")
+    passwd := c.String("passwd")
+    interval := c.Int("interval")
+    opts := c.StringSlice("register")
+    count := c.Int("count")
+    log.Debug(opts)
+
+    forEach(opts, func(opt string, lhost string, lport string, rhost string, wildcard string) {
+        if wildcard == "*" {
+            go poll(opt, lhost, lport, rhost, passwd, interval, count, debug)
+        } else {
+            go connect(opt, lhost, lport, rhost, passwd, interval, debug)      
+        }        
+    })        
 }

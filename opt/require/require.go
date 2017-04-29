@@ -20,7 +20,6 @@ import (
     "strconv"
     "regexp"
     "errors"
-    "strings"
     
     "../../omap"
     "../../user"
@@ -34,20 +33,11 @@ type parsecb func(string, string, string, string, string)
 type callback func()
 
 var cbTicker int = 0
-var ayncCB callback = nil 
+var asyncCB callback = nil 
 
-func split(opts string) []string {
-    return strings.Split(opts, ",")
-}
+func forEach(opts []string, cb parsecb) {
 
-func join(opts []string) string {
-    return strings.Join(opts, ",")
-}
-
-func forEach(opts string, cb parsecb) {
-    optArr := split(opts)
-
-    for _, opt := range optArr {
+    for _, opt := range opts {
         rhost, rport, lhost, lport := parse(opt)
 
         // User remote port for listening if no local port provided
@@ -81,12 +71,10 @@ func handleRequest(m *omap.OMap, in net.Conn) {
 
     for {
         h := m.Next()
-        if h == nil {
-            // Send a response back to person contacting us.
-            in.Close()
-        } else {
+        if h != nil {
             port := strconv.Itoa(int(h.Value.(*utils.Host).ListenPort))
             out, err := net.Dial("tcp", "127.0.0.1:" + port)
+            defer out.Close()    
 
             // Connection failed, remove connection information from the list
             if err != nil {
@@ -96,10 +84,10 @@ func handleRequest(m *omap.OMap, in net.Conn) {
 
             go io.Copy(out, in)
             io.Copy(in, out)
-            defer out.Close()    
         }
         break
-    } 
+    }
+    
 }
 
 func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
@@ -120,11 +108,14 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     // inform the caller with async callback and 
     // unset cbTicker.
     if cbTicker == 0 {
-        if ayncCB != nil {
-            ayncCB()
-        }
         cbTicker = -1
+        log.Debug("cbTicker =", cbTicker)
+        log.Debug(asyncCB)
+        if asyncCB != nil {
+            asyncCB()
+        }
     }
+    
 }
 
 func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
@@ -138,55 +129,59 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 
 func Process(c *cli.Context, cb callback) {
 
-    opts := c.String("require")
-    if len(opts) > 0 {
-
-        // Get password
-        passwd := c.String("passwd")
+    opts := c.StringSlice("require")
+    log.Debug(opts)
+    
+    // Get password
+    passwd := c.String("passwd")
         
-        ayncCB = cb
+    forEach(opts, func(opt string, rhost string, rport string, lhost string, lport string) {
 
-        forEach(opts, func(opt string, rhost string, rport string, lhost string, lport string) {
-            uname := rhost + "." + rport
-            log.Debug("uname=", uname)
-
-            //Create User
-            u := user.NewUserWithPassword(uname, passwd)
-            log.Debug("user=", u)
-
-            // Initialize Ordered map and server events.
-            m := omap.New()
-
-            // Increment callback ticker.
-            cbTicker++
-            
-            // Monitor unix listening socker based on uname
-            go server.Monitor(m, uname, ConnAddEv, ConnRemoveEv)
-
-            addr := fmt.Sprintf("%s:%s", lhost, lport)
-            log.Debug("addr=", addr)
-
-            fmt.Printf("Listening on %s\n", addr)
-            l, err := net.Listen("tcp", addr)
-            utils.Check(err)
-
-            go func() {
-                for {
-                    // Listen for an incoming connection.
-                    conn, err := l.Accept()
-                    utils.Check(err)
-
-                    // Handle connections in a new goroutine.
-                    go handleRequest(m, conn)
-                }                
-            }()
-        })
-
-    } else {
-        // If require is empty trigger callback.
+        //Store callback for later invocation
         if cb != nil {
-            cb()
+            asyncCB = cb
+            cb = nil            
         }
+
+        uname := rhost + "." + rport
+        log.Debug("uname=", uname)
+
+        //Create User
+        u := user.NewUserWithPassword(uname, passwd)
+        log.Debug("user=", u)
+
+        // Initialize Ordered map and server events.
+        m := omap.New()
+
+        // Increment callback ticker.
+        cbTicker++
+
+        // Monitor unix listening socker based on uname
+        go server.Monitor(m, uname, ConnAddEv, ConnRemoveEv)
+
+        addr := fmt.Sprintf("%s:%s", lhost, lport)
+        log.Debug("addr=", addr)
+
+        fmt.Printf("Listening on %s\n", addr)
+        l, err := net.Listen("tcp", addr)
+        utils.Check(err)
+
+        go func() {
+            for {
+                // Listen for an incoming connection.
+                conn, err := l.Accept()
+                utils.Check(err)
+
+                // Handle connections in a new goroutine.
+                go handleRequest(m, conn)
+            }            
+        }()
+    })
+
+    // If options are non-zero then don't invoke callback now.
+    // AsyncCB will be invoked when all the services connects.
+    if cb != nil {
+        cb()
     }
     
 

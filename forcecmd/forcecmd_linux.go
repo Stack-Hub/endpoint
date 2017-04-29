@@ -38,7 +38,7 @@ func waitForExit(fd int) {
         sig := <-sigs
         log.Debug(sig)
         utils.UnlockFile(fd)
-        os.Exit(1)
+        os.Exit(0)
     }()
 
     flag := unix.SIGHUP
