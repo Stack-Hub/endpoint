@@ -21,10 +21,10 @@ import (
     "strconv"
     "time"
     
-    "../../utils"
-    "../../client"
-    log "github.com/Sirupsen/logrus"
+    "github.com/duppercloud/trafficrouter/utils"
+    "github.com/duppercloud/trafficrouter/ssh"
     "github.com/urfave/cli"
+    log "github.com/Sirupsen/logrus"
 )
 
 /*
@@ -80,8 +80,8 @@ func poll( opt string, lhost string, lport string, rhost string,
             if err == nil && len(raddr) > 0 {
                 addr := uname + "@" + dns
 
-                if !client.IsConnected(addr) {
-                    client.Connect(uname, passwd, dns, lport, debug)
+                if !ssh.IsConnected(addr) {
+                    ssh.Connect(uname, passwd, dns, lport, debug)
                 }
             } 
         }    
@@ -103,9 +103,9 @@ func connect(opt string, lhost string, lport string, rhost string,
     uname := lhost + "." + lport
     for {                  
         addr := uname + "@" + rhost
-        if !client.IsConnected(addr) {
+        if !ssh.IsConnected(addr) {
             fmt.Println("Connecting...", opt)
-            client.Connect(uname, passwd, rhost, lport, debug)
+            ssh.Connect(uname, passwd, rhost, lport, debug)
         }
         time.Sleep( time.Duration(interval) * 1000 * time.Millisecond)
     }        

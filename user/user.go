@@ -26,7 +26,7 @@ import (
     "io/ioutil"
     "strings"
     
-    "../utils"
+    "github.com/duppercloud/trafficrouter/utils"
     log "github.com/Sirupsen/logrus"
 )
 

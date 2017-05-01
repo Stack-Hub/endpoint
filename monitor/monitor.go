@@ -24,8 +24,8 @@ import (
     "fmt"
     "syscall"
     
-    "../utils"
-    "../omap"
+    "github.com/duppercloud/trafficrouter/utils"
+    "github.com/duppercloud/trafficrouter/omap"
     log "github.com/Sirupsen/logrus"
 )
 

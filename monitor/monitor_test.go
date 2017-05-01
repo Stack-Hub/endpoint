@@ -24,7 +24,7 @@ import (
     "runtime"
     "time"
     
-    "../utils"
+    "github.com/duppercloud/trafficrouter/utils"
     ps "github.com/shirou/gopsutil/process"
     netutil "github.com/shirou/gopsutil/net"
 )

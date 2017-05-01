@@ -20,7 +20,7 @@ import (
     "os/user"
     "net"
 
-    "../utils"
+    "github.com/duppercloud/trafficrouter/utils"
     netutil "github.com/shirou/gopsutil/net"
     ps "github.com/shirou/gopsutil/process"
     log "github.com/Sirupsen/logrus"    
@@ -38,7 +38,7 @@ func Cleanup() {
 /*
  *  Get Parent process's pid and commandline.
  */
-func getProcParam(p int32) (*ps.Process, string) {
+func procInfo(p int32) (*ps.Process, string) {
 
     // Init process struct based on PID
     proc, err := ps.NewProcess(p)
@@ -54,7 +54,7 @@ func getProcParam(p int32) (*ps.Process, string) {
 /*
  *  Get tunnel connections parameters in host struct
  */
-func getConnParams(pid int32, h *utils.Host) {
+func connInfo(pid int32, h *utils.Host) {
     // Get SSH reverse tunnel connection information.
     // 3 sockers are opened by ssh:
     // 1. Connection from client to server
@@ -83,7 +83,7 @@ func getConnParams(pid int32, h *utils.Host) {
 /*
  *  Get Client configuration parameters in host struct
  */
-func getConfigParams(h *utils.Host) {
+func config(h *utils.Host) {
     
     // Get Client config which should be the last argument
     cfgstr := os.Args[len(os.Args) - 1]
@@ -103,7 +103,7 @@ func getConfigParams(h *utils.Host) {
 /*
  *  Send host struct to uname socket
  */
-func writeHost(uname string, h *utils.Host) {
+func write(uname string, h *utils.Host) {
 
     // Form Unix socket based on pid 
     f := utils.RUNPATH + uname + ".sock"
@@ -126,7 +126,7 @@ func writeHost(uname string, h *utils.Host) {
  *  Get connection information of ssh tunnel and send the 
  *  information to server.
  */
-func SendConfig() {
+func Send() {
     
     // Get parent proc ID which will be flock's pid.
     ppid := os.Getppid()
@@ -136,7 +136,7 @@ func SendConfig() {
     fd = utils.LockFile(ppid)
 
     // Get parent process params
-    _, pcmd := getProcParam(int32(ppid))
+    _, pcmd := procInfo(int32(ppid))
     log.Debug("Parent Process cmdline = ", pcmd)
     
     //Host to store connection information
@@ -144,10 +144,10 @@ func SendConfig() {
     h.Pid = ppid
     
     //Get socket connection parameters in host struct
-    getConnParams(int32(ppid), &h)
+    connInfo(int32(ppid), &h)
     
     //Get client config parameters in host struct
-    getConfigParams(&h)
+    config(&h)
 
     //Log complete host struct.
     log.Debug(h)
@@ -157,9 +157,9 @@ func SendConfig() {
     u, _ := user.Current()
 
     //Send host struct to user name unix socket.
-    writeHost(u.Username, &h)
+    write(u.Username, &h)
     
     // Wait for Interrupt or Parent exit
-    waitForExit(fd)
+    wait(fd)
 
 }

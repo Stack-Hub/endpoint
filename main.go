@@ -19,13 +19,13 @@ import (
     "os/exec"
     "syscall"
     
-    "./server"
-    "./forcecmd"
-    "./user"
-    "./utils"
-    "./opt/require"
-    "./opt/register"
-    "./version"
+    "github.com/duppercloud/trafficrouter/monitor"
+    "github.com/duppercloud/trafficrouter/config"
+    "github.com/duppercloud/trafficrouter/user"
+    "github.com/duppercloud/trafficrouter/utils"
+    "github.com/duppercloud/trafficrouter/opt/require"
+    "github.com/duppercloud/trafficrouter/opt/register"
+    "github.com/duppercloud/trafficrouter/version"
     log "github.com/Sirupsen/logrus"
     "github.com/urfave/cli"
 )
@@ -91,26 +91,26 @@ func main() {
 			Value: "123456789",
 		},	
         cli.StringSliceFlag{
-			Name:  "require",
-            Usage: "Services required for application. Format `app:port@laddr:lport` e.g. db:3306@localhost",
+			Name:  "require, req",
+            Usage: "Services required for application. Format `app:port@laddr[:lport]` e.g. db:3306@localhost",
 		},	
         cli.StringSliceFlag{
-			Name:  "register",
+			Name:  "register, reg",
             Usage: "Register this service. Format `app:port@raddr` e.g. app:80@lb or app:80@lb-*",
 		},	
         cli.BoolFlag{
 			Name:  "forcecmd, f",
-            Usage: "Use as SSH force command (used internally)",
+            Usage: "SSH force command (used internally)",
 			Hidden: false,
 		},	
         cli.IntFlag{
-			Name:  "count",
+			Name:  "count, c",
             Usage: "Wildcard count",
 			Value: 10,
 		},	
         cli.IntFlag{
-			Name:  "interval",
-            Usage: "Interval to detect new hosts, used for wildcard with --register option",
+			Name:  "interval, i",
+            Usage: "Interval to detect new hosts, used with --register for wildcard option",
 			Value: 10,
 		},	
     }

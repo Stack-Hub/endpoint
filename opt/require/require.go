@@ -21,12 +21,12 @@ import (
     "regexp"
     "errors"
     
-    "../../omap"
-    "../../user"
-    "../../server"
-    "../../utils"
-    log "github.com/Sirupsen/logrus"
+    "github.com/duppercloud/trafficrouter/omap"
+    "github.com/duppercloud/trafficrouter/user"
+    "github.com/duppercloud/trafficrouter/monitor"
+    "github.com/duppercloud/trafficrouter/utils"
     "github.com/urfave/cli"
+    log "github.com/Sirupsen/logrus"
 )
 
 type parsecb func(string, string, string, string, string)

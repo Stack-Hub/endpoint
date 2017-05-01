@@ -20,7 +20,7 @@ import (
     "os/signal"
     "syscall"
 
-    "../utils"
+    "github.com/duppercloud/trafficrouter/utils"
     log "github.com/Sirupsen/logrus"    
 )
 
@@ -28,7 +28,7 @@ import (
 /*
  * Wait for parent to exit.
  */
-func waitForExit(fd int) {
+func wait(fd int) {
 
     sigs := make(chan os.Signal, 1)    
     signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)

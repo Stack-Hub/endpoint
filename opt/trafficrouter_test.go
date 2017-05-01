@@ -23,7 +23,7 @@ import (
     "runtime"
     "time"
     
-    "../user"
+    "github.com/duppercloud/trafficrouter/user"
 )
 
 const (
