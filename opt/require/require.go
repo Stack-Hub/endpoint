@@ -147,7 +147,7 @@ func Process(c *cli.Context, cb callback) {
         log.Debug("uname=", uname)
 
         //Create User
-        u := user.NewUserWithPassword(uname, passwd)
+        u := user.New(uname, passwd)
         log.Debug("user=", u)
 
         // Initialize Ordered map and server events.

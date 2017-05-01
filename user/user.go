@@ -53,7 +53,7 @@ func Cleanup() {
     }      
 }
 
-func NewUserWithPassword(uname string, pass string) *User {
+func New(uname string, pass string) *User {
     log.Debug("uname=", uname, ",pass=", pass)
     err := addUser(uname)
     utils.Check(err)
@@ -65,9 +65,9 @@ func NewUserWithPassword(uname string, pass string) *User {
     users[uname] = u    
     log.Debug("users = ", users)
     
-    setUserPasswd(uname, pass)
-    addUserSSHDConfig(utils.SSHD_CONFIG, uname)
-    restartSSHServer()
+    setPasswd(uname, pass)
+    addConfig(utils.SSHD_CONFIG, uname)
+    restartServer()
     
     return u
 }
@@ -83,8 +83,8 @@ func (u *User) Delete() error {
     out, err := exec.Command(cmdName, cmdArgs...).Output()
     log.Debug(string(out))
     
-    removeUserSSHDConfig(utils.SSHD_CONFIG, u.Name)
-    restartSSHServer()
+    removeConfig(utils.SSHD_CONFIG, u.Name)
+    restartServer()
     
     // Remove user from map store
     if err == nil {
@@ -100,7 +100,7 @@ func (u *User) Delete() error {
  * path: the path of the config file
  * username: Username for Match block.
  */
-func addUserSSHDConfig(path, username string) error {    
+func addConfig(path, username string) error {    
       matchBlkStr := fmt.Sprintf(utils.MATCHBLK, username)
 
       f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
@@ -119,7 +119,7 @@ func addUserSSHDConfig(path, username string) error {
  * path: the path of the config file
  * username: Username for Match block.
  */
-func removeUserSSHDConfig(path, username string) error {    
+func removeConfig(path, username string) error {    
       matchBlkStr := fmt.Sprintf(utils.MATCHBLK, username)
 
       input, err := ioutil.ReadFile(path)
@@ -140,7 +140,7 @@ func removeUserSSHDConfig(path, username string) error {
 /**
  * Restart SSH Server
  */
-func restartSSHServer() error {    
+func restartServer() error {    
       
 	cmdName := "service"
     cmdArgs := []string{"ssh", "restart"}
@@ -169,7 +169,7 @@ func addUser(username string) error {
 /**
 * Set Password for User
 */
-func setUserPasswd(username string, passwd string) error {
+func setPasswd(username string, passwd string) error {
     cmdName := "chpasswd"
     cmdArgs := []string{}
 
