@@ -35,7 +35,7 @@ import (
  */
 func cleanup() {    
     log.Debug("Cleaning up")
-    forcecmd.Cleanup()
+    config.Cleanup()
     server.Cleanup()
     user.Cleanup()
 }
@@ -126,7 +126,7 @@ func main() {
     app.Action = func (c *cli.Context) error {
         // Send message for Force Command mode and return.
         if (c.Bool("f") == true) {
-            forcecmd.SendConfig()
+            config.Send()
             return nil
         }
 
