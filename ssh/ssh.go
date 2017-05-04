@@ -21,14 +21,23 @@ import (
     log "github.com/Sirupsen/logrus"
 )
 
+/*
+ * Connection store
+ */
 var clients map[string]*exec.Cmd = make(map[string]*exec.Cmd, 1)
 
+/*
+ * Wait fo client to disconnect
+ */
 func wait(cmd *exec.Cmd, addr string){
     cmd.Wait()
     delete(clients, addr)
     log.Debug("Disconnected ", addr)
 }
 
+/*
+ * SSH client connect
+ */
 func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
 
     isDebug := func() string {
@@ -68,6 +77,9 @@ func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
     return c
 }
 
+/*
+ * Check if client is already connected
+ */
 func IsConnected(addr string) bool {
     ok := clients[addr]
     
@@ -78,6 +90,9 @@ func IsConnected(addr string) bool {
     return false
 }
 
+/*
+ * Diconnect client
+ */
 func Disconnect(cmd *exec.Cmd) {
  
     err := cmd.Process.Kill()

@@ -1,4 +1,6 @@
 .gut
 .gutignore
+release
 trafficrouter
 .DS_Store
+install.sh.bak

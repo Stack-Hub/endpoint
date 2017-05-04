@@ -53,6 +53,9 @@ func Cleanup() {
     }      
 }
 
+/*
+ * Create new user
+ */
 func New(uname string, pass string) *User {
     log.Debug("uname=", uname, ",pass=", pass)
     err := addUser(uname)

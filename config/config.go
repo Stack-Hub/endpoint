@@ -94,9 +94,12 @@ func config(h *utils.Host) {
     json.Unmarshal([]byte(cfgstr), &cfg)
     
     // Update and log host var
-    h.AppPort = cfg.Port                
     h.Config = cfg
     h.Uid = os.Getuid()
+    
+    u, err := user.Current()
+    utils.Check(err)
+    h.Uname = u.Username
     
 }
 

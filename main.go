@@ -54,6 +54,32 @@ func installHandler() {
     }()    
 }
 
+/*
+ * Increase ulimit to handle large concurrent connections.
+ */
+func ulimit(num uint64){
+    var rLimit syscall.Rlimit
+    err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+    if err != nil {
+        log.Debug("Error Getting Rlimit ", err)
+    }
+    log.Debug("rlimit=", rLimit)
+    rLimit.Max = num
+    rLimit.Cur = num
+    err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+    if err != nil {
+        log.Debug("Error Setting Rlimit ", err)
+    }
+    err = syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+    if err != nil {
+        log.Debug("Error Getting Rlimit ", err)
+    }
+    log.Debug("Rlimit Final", rLimit)
+}
+
+/*
+ * Entrypoint
+ */
 func main() {
 
     /*
@@ -116,7 +142,9 @@ func main() {
     }
     
     app.Before = func(c *cli.Context) error {
-		if c.Bool("debug") {
+        
+        debug := c.Bool("D")
+		if debug {
 			log.SetLevel(log.DebugLevel)
 		}
 
@@ -135,10 +163,19 @@ func main() {
             log.Fatal("Empty password. Please provide password with --passwd option")
         }
 
+        // Set ulimit to max
+        ulimit(999999)
+        
+        // Poll specific values
+        count := c.Int("count")
+        interval := c.Int("interval")
+        
+        debug := c.Bool("D")
         // Wait for Needed service before registering.
-        go require.Process(c, func() {
+        go require.Process(passwd, c.StringSlice("require"), func() {
 
-            register.Process(c)
+            // Register services.
+            register.Process(passwd, c.StringSlice("register"), count, interval, debug)
 
             cmdargs := c.Args()
             if len(cmdargs) > 0 {

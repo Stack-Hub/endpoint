@@ -25,7 +25,6 @@ import (
     "github.com/duppercloud/trafficrouter/user"
     "github.com/duppercloud/trafficrouter/monitor"
     "github.com/duppercloud/trafficrouter/utils"
-    "github.com/urfave/cli"
     log "github.com/Sirupsen/logrus"
 )
 
@@ -35,6 +34,9 @@ type callback func()
 var cbTicker int = 0
 var asyncCB callback = nil 
 
+/*
+ * forEach parser callback
+ */
 func forEach(opts []string, cb parsecb) {
 
     for _, opt := range opts {
@@ -54,6 +56,9 @@ func forEach(opts []string, cb parsecb) {
     }
 }
 
+/*
+ * parse --require option
+ */
 func parse(str string) (string, string, string, string) {
     var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:]+)(:([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
@@ -65,31 +70,43 @@ func parse(str string) (string, string, string, string) {
 }
 
 
-// Handles incoming requests.
+/*
+ * Data Handling
+ * Handles incoming tcp requests and 
+ * route to next available connection.
+ */
 func handleRequest(m *omap.OMap, in net.Conn) {
     defer in.Close()
 
     for {
-        h := m.Next()
-        if h != nil {
-            port := strconv.Itoa(int(h.Value.(*utils.Host).ListenPort))
-            out, err := net.Dial("tcp", "127.0.0.1:" + port)
-            defer out.Close()    
+        el := m.Next()
+        if el != nil {
+            h := el.Value.(*utils.Host)
+            if h != nil {
+                port := strconv.Itoa(int(h.ListenPort))
 
-            // Connection failed, remove connection information from the list
-            if err != nil {
-                m.RemoveEl(h)
-                continue
+                out, err := net.Dial("tcp", "127.0.0.1:" + port)
+                // Connection failed, remove connection information from the list
+                if err != nil {
+                    m.RemoveEl(el)
+                    continue
+                }
+                defer out.Close()    
+
+                log.Debug("Routing Data for ", h.Uname, " to host ", h)
+                go io.Copy(out, in)
+                io.Copy(in, out)                
             }
-
-            go io.Copy(out, in)
-            io.Copy(in, out)
         }
         break
     }
     
 }
 
+/*
+ * Connection added evant callback
+ * When all services connect, invoke async callback
+ */
 func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 
     // If this is first connection then decrement callback ticker
@@ -101,7 +118,7 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     fmt.Printf("Connected %s from %s:%d at Port %d\n", 
                uname, 
                h.RemoteIP, 
-               h.AppPort, 
+               h.Config.Port, 
                h.ListenPort)
     
     // All required connections are established
@@ -118,23 +135,24 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     
 }
 
+/*
+ * Connection removed callback
+ */
 func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     m.Remove(p)
     fmt.Printf("Removed %s from %s:%d at Port %d\n", 
                uname, 
                h.RemoteIP, 
-               h.AppPort, 
+               h.Config.Port, 
                h.ListenPort)
 }
 
-func Process(c *cli.Context, cb callback) {
-
-    opts := c.StringSlice("require")
+/*
+ * Process require options
+ */
+func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
-    
-    // Get password
-    passwd := c.String("passwd")
-        
+            
     forEach(opts, func(opt string, rhost string, rport string, lhost string, lport string) {
 
         //Store callback for later invocation

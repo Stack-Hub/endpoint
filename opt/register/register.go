@@ -23,7 +23,6 @@ import (
     
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/duppercloud/trafficrouter/ssh"
-    "github.com/urfave/cli"
     log "github.com/Sirupsen/logrus"
 )
 
@@ -114,12 +113,7 @@ func connect(opt string, lhost string, lport string, rhost string,
 /*
  *  Process --regiser options
  */
-func Process(c *cli.Context) {
-    debug := c.Bool("D")
-    passwd := c.String("passwd")
-    interval := c.Int("interval")
-    opts := c.StringSlice("register")
-    count := c.Int("count")
+func Process(passwd string, opts []string, count int, interval int, debug bool) {
     log.Debug(opts)
 
     forEach(opts, func(opt string, lhost string, lport string, rhost string, wildcard string) {

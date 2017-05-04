@@ -50,13 +50,13 @@ type Config struct {
  *  Host Struct is passed from forceCmd to server
  */
 type Host struct {
-    ListenPort  uint32 `json:"lisport"`
-    RemoteIP    string `json:"raddr"`
-    RemotePort  uint32 `json:"rport"`
-    AppPort     uint32 `json:"aport"`
-    Config      Config `json:"config"`
-    Uid         int    `json:"uid"`
-    Pid         int    `json:"pid"`
+    ListenPort  uint32 `json:"lisport"` // Localhost listening port of reverse tunnel
+    RemoteIP    string `json:"raddr"`   // Remote IP 
+    RemotePort  uint32 `json:"rport"`   // Port on which remote host connected
+    Config      Config `json:"config"`  // Remote Config 
+    Uid         int    `json:"uid"`     // User ID
+    Uname       string `json:"uname"`   // Username
+    Pid         int    `json:"pid"`     // Reverse tunnel process ID
 }
 
 

@@ -15,7 +15,8 @@ package user
 
 import (
     "testing"
-    "io/ioutil"
+    "os/exec"
+    "fmt"
 )
 
 type testpair struct {
@@ -27,6 +28,10 @@ var data = []testpair {
     {"db.3360",    "1234567890"},
     {"app.80",     "0987654321"},
     {"redis.6379", "10293884756"},
+    {"elasticsearch.1234", "10293884756"},
+    {"logstash.1122", "10293884756"},
+    {"mysql.3360", "10293884756"},
+    {"postgres.5432", "10293884756"},
 }
 
 /**
@@ -43,19 +48,18 @@ func chkUser(username string) error {
 }
 
 
-func TestAdd(t *testing.T) {
-
+func Test(t *testing.T) {
     users := make(map[string]*User)
     
     for _, auth := range data {
         u := New(auth.username, auth.password)
-        users[username] = u
+        users[auth.username] = u
 
-        err := chkUser(username)
+        err := chkUser(auth.username)
         if err != nil {
             t.Error(
                 "For", u.Name,
-                "expected", username,
+                "expected", auth.username,
                 "got", err,
             )        
         }
@@ -63,6 +67,12 @@ func TestAdd(t *testing.T) {
     
     for _, u := range users {
         u.Delete()
+        err := chkUser(u.Name)
+        if err == nil {
+            t.Error(
+                "User", u.Name,
+                "exists",
+            )        
+        }
     }
-
 }
