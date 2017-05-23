@@ -122,7 +122,7 @@ func main() {
 		},	
         cli.StringSliceFlag{
 			Name:  "register, reg",
-            Usage: "Register this service. Format `app:port@raddr` e.g. app:80@lb or app:80@lb-*",
+            Usage: "Register this service. Format `app:port@raddr` e.g. app:80@lb",
 		},	
         cli.BoolFlag{
 			Name:  "forcecmd, f",

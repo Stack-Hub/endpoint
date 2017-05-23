@@ -38,7 +38,7 @@ func wait(cmd *exec.Cmd, addr string){
 /*
  * SSH client connect
  */
-func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
+func Connect(u string, pass string, ip string, p string, debug bool) *exec.Cmd {
 
     isDebug := func() string {
         if debug == true {
@@ -54,12 +54,12 @@ func Connect(u string, pass string, h string, p string, debug bool) *exec.Cmd {
                      "-t", 
                      "-o", "StrictHostkeyChecking=no", 
                      "-o", "UserKnownHostsFile=/dev/null", 
-                     "-R", "0:localhost:" + p, u + "@" + h, 
+                     "-R", "0:localhost:" + p, u + "@" + ip, 
                      "--",
                      isDebug(),
                      "{\"port\":" + p + "}"}
 
-    addr := u + "@" + h
+    addr := u + "@" + ip
     log.Debug("Connecting ", addr)
     
 	c := exec.Command(cmd, args...)

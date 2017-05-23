@@ -18,7 +18,6 @@ import (
     "net"
     "regexp"
     "errors"
-    "strconv"
     "time"
     
     "github.com/duppercloud/trafficrouter/utils"
@@ -29,19 +28,19 @@ import (
 /*
  *  forEach parser callback
  */
-type parsecb func(string, string, string, string, string)
+type parsecb func(string, string, string, string)
 
 /*
  *  --regiser option parser logic
  */
-func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:\*]+)(\*)?$`)
+func parse(str string) (string, string, string) {
+    var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:\*]+)$`)
 	parts := expr.FindStringSubmatch(str)
 	if len(str) == 0 {
-        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost(*)?\n", str)))
+        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost?\n", str)))
 	}
             
-    return parts[1], parts[2], parts[3], parts[4]
+    return parts[1], parts[2], parts[3]
 }
 
 /*
@@ -49,48 +48,14 @@ func parse(str string) (string, string, string, string) {
  */
 func forEach(opts []string, cb parsecb) {
     for _, opt := range opts {
-        lhost, lport, rhost, wc := parse(opt)
+        lhost, lport, rhost := parse(opt)
 
         log.Debug("laddr=", lhost, ",",
                   "lport=", lport, ",",
-                  "rhost=", rhost, ",",
-                  "wc=",    wc)
+                  "rhost=", rhost)
         
-        cb(opt, lhost, lport, rhost, wc)
+        cb(opt, lhost, lport, rhost)
     }
-}
-
-/*
- *  Periodic poll for remote host to detect the presence
- *  and connect when available.
- */
-func poll( opt string, lhost string, lport string, rhost string, 
-           passwd string, interval int, count int, debug bool) {
-    
-    uname := lhost + "." + lport
-    for {                    
-        log.Debug("Resolving...", opt)
-        for i := 1; i < count; i++ {
-            dns := rhost + strconv.Itoa(i)
-            
-            //Check if host exists
-            raddr, err := net.LookupHost(dns)
-
-            if err == nil && len(raddr) > 0 {
-                addr := uname + "@" + dns
-
-                if !ssh.IsConnected(addr) {
-                    ssh.Connect(uname, passwd, dns, lport, debug)
-                }
-            } 
-        }    
-
-        if interval <= 0 {
-            return
-        }
-        
-        time.Sleep( time.Duration(interval) * 1000 * time.Millisecond)
-    }        
 }
 
 /*
@@ -101,11 +66,19 @@ func connect(opt string, lhost string, lport string, rhost string,
 
     uname := lhost + "." + lport
     for {                  
-        addr := uname + "@" + rhost
-        if !ssh.IsConnected(addr) {
-            fmt.Println("Connecting...", opt)
-            ssh.Connect(uname, passwd, rhost, lport, debug)
+        
+        //Check if host exists
+        ipArr, _ := net.LookupHost(rhost)
+        
+        for _, ip := range ipArr {
+            addr := uname + "@" + ip
+
+            if !ssh.IsConnected(addr) {
+                fmt.Println("Connecting...", addr)
+                ssh.Connect(uname, passwd, ip, lport, debug)
+            }            
         }
+
         time.Sleep( time.Duration(interval) * 1000 * time.Millisecond)
     }        
 }
@@ -116,11 +89,7 @@ func connect(opt string, lhost string, lport string, rhost string,
 func Process(passwd string, opts []string, count int, interval int, debug bool) {
     log.Debug(opts)
 
-    forEach(opts, func(opt string, lhost string, lport string, rhost string, wildcard string) {
-        if wildcard == "*" {
-            go poll(opt, lhost, lport, rhost, passwd, interval, count, debug)
-        } else {
-            go connect(opt, lhost, lport, rhost, passwd, interval, debug)      
-        }        
+    forEach(opts, func(opt string, lhost string, lport string, rhost string) {
+        go connect(opt, lhost, lport, rhost, passwd, interval, debug)      
     })        
 }
