@@ -34,6 +34,7 @@ Match User %s
     X11Forwarding no
     AllowAgentForwarding no
     PermitTTY yes
+    AcceptEnv SSH_RFWD
     ForceCommand /usr/sbin/trafficrouter -f $SSH_ORIGINAL_COMMAND
 `
 )

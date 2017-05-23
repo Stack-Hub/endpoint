@@ -141,7 +141,7 @@ func Send() {
 
     //Log complete host struct.
     log.Debug(h)
-    fmt.Println("Connected on port ", h.RemotePort)
+    fmt.Println("Connected on port", h.RemotePort)
     
     // Get Current user
     u, _ := user.Current()
