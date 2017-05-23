@@ -19,10 +19,11 @@ import (
     "os"
     "os/user"
     "net"
+    "strconv"
+    "errors"
+    "regexp"
 
     "github.com/duppercloud/trafficrouter/utils"
-    netutil "github.com/shirou/gopsutil/net"
-    ps "github.com/shirou/gopsutil/process"
     log "github.com/Sirupsen/logrus"    
 )
 
@@ -35,48 +36,38 @@ func Cleanup() {
     utils.UnlockFile(fd)    
 }
 
+
 /*
- *  Get Parent process's pid and commandline.
+ *  SSH_CLIENT parse logic
  */
-func procInfo(p int32) (*ps.Process, string) {
-
-    // Init process struct based on PID
-    proc, err := ps.NewProcess(p)
-    utils.Check(err)
-
-    // Get command line of parent process.
-    cmd, err := proc.Cmdline()
-    utils.Check(err)
-    
-    return proc, cmd
+func parse(str string) (string, string, string) {
+    var expr = regexp.MustCompile(`^(.*) (.*) (.*)$`)
+	parts := expr.FindStringSubmatch(str)
+	if len(str) == 0 {
+        utils.Check(errors.New(fmt.Sprintf("SSH_CLIENT parse error: [%s]\n", str)))
+	}
+            
+    return parts[1], parts[2], parts[3]
 }
+
 
 /*
  *  Get tunnel connections parameters in host struct
  */
-func connInfo(pid int32, h *utils.Host) {
-    // Get SSH reverse tunnel connection information.
-    // 3 sockers are opened by ssh:
-    // 1. Connection from client to server
-    // 2. Listening socket for IPv4
-    // 3. Listening socket for IPv6
-    conns, err := netutil.ConnectionsPid("inet", pid)
-    utils.Check(err)
-    log.Debug(conns)
+func connInfo(h *utils.Host) {
+    // Get SSH reverse tunnel connection information from environment.    
 
-    for _, c := range conns {
-        // Family = 2 indicates IPv4 socket. Store Listen Port
-        // in host structure.
-        if c.Family == 2 && c.Status == "LISTEN" {
-            h.ListenPort = c.Laddr.Port
-        }
+    sshClient := os.Getenv("SSH_CLIENT")
+    remoteHost, remotePort, _ := parse(sshClient)
+    rPort, _ := strconv.Atoi(remotePort)
+    h.RemoteIP = remoteHost
+    h.RemotePort = uint32(rPort)
+    log.Debug("SSH_CLIENT", sshClient)
+    
+    lisPort, _ := strconv.Atoi(os.Getenv("SSH_RFWD"))
+    log.Debug("SSH_RFWD", os.Getenv("SSH_RFWD"))
 
-        // Store Established connection IP & Port in host structure.
-        if c.Family == 2 && c.Status == "ESTABLISHED" {
-            h.RemoteIP   = c.Raddr.IP
-            h.RemotePort = c.Raddr.Port
-        }
-    }
+    h.ListenPort = uint32(lisPort)
 }
 
 
@@ -137,17 +128,13 @@ func Send() {
 
     // Flock on pid file
     fd = utils.LockFile(ppid)
-
-    // Get parent process params
-    _, pcmd := procInfo(int32(ppid))
-    log.Debug("Parent Process cmdline = ", pcmd)
     
     //Host to store connection information
     var h utils.Host
     h.Pid = ppid
     
     //Get socket connection parameters in host struct
-    connInfo(int32(ppid), &h)
+    connInfo(&h)
     
     //Get client config parameters in host struct
     config(&h)

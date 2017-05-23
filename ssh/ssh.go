@@ -50,10 +50,10 @@ func Connect(u string, pass string, ip string, p string, debug bool) *exec.Cmd {
 	cmd := "sshpass"
 	args := []string{"-p", pass,
                      "ssh",
-                     "-q", 
                      "-t", 
                      "-o", "StrictHostkeyChecking=no", 
                      "-o", "UserKnownHostsFile=/dev/null", 
+                     "-o", "SendEnv=SSH_RFWD", 
                      "-R", "0:localhost:" + p, u + "@" + ip, 
                      "--",
                      isDebug(),
@@ -62,7 +62,9 @@ func Connect(u string, pass string, ip string, p string, debug bool) *exec.Cmd {
     addr := u + "@" + ip
     log.Debug("Connecting ", addr)
     
-	c := exec.Command(cmd, args...)
+    os.Setenv("LD_PRELOAD","/usr/lib/trafficrouter/rfwd.so")
+
+	c := exec.Command(cmd, args...)    
     c.Stdout = os.Stdout
     c.Stderr = os.Stderr
     err := c.Start()
