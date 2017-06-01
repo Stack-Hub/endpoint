@@ -28,7 +28,7 @@ import (
     log "github.com/Sirupsen/logrus"
 )
 
-type parsecb func(string, string, string, string, string)
+type parsecb func(string, string, string, string, string, string)
 type callback func()
 
 var cbTicker int = 0
@@ -40,35 +40,61 @@ var asyncCB callback = nil
 func forEach(opts []string, cb parsecb) {
 
     for _, opt := range opts {
-        rhost, rport, lhost, lport := parse(opt)
-
-        // User remote port for listening if no local port provided
-        if lport == "" {
-            lport = rport
-        }
+        rhost, rport, lhost, _type, lport := parse(opt)
 
         log.Debug("raddr=", rhost, ",",
                   "rport=", rport, ",",
                   "laddr=", lhost, ",",
+                  "type=",  _type, ",",
                   "lport=", lport)
         
-        cb(opt, rhost, rport, lhost, lport)
+        cb(opt, rhost, rport, lhost, _type, lport)
     }
 }
 
 /*
  * parse --require option
+ * Formats rhost:rport@lhost:?      - random port mapping (first port maps to same as source port) 
+ *         rhost:rport@lhost:>?     - load balance rport to random port (default is first port)
+ *         rhost:rport@lhost:>lport - load balance rport to lport
  */
-func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^(.+):([0-9]+)@([^:]+)(:([0-9]+))?$`)
+func parse(str string) (string, string, string, string, string) {
+    var expr = regexp.MustCompile(`^(.+):([0-9]+|\*)@([^:\*]+)(:?((\>([0-9]+|\?))|(\?)))?$`)
 	parts := expr.FindStringSubmatch(str)
 	if len(str) == 0 {
-        utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport@lhost(:lport)?\n", str)))
+        utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport@lhost(:lport)? or rhost:rport@lhost(:>lport)? lport can be port number for static mapping or ? for dynamic mapping\n", str)))
 	}
     
-    return parts[1], parts[2], parts[3], parts[5]
+    part7 := ""
+    if parts[5] != "?" {
+        part7 = parts[7]
+    }
+    
+    return parts[1], parts[2], parts[3], parts[5], part7
 }
 
+
+/*
+* Get interface IP address
+ */
+func getIP(iface string) (*net.TCPAddr, error) {
+    
+    ief, err := net.InterfaceByName(iface)
+    if err !=nil{
+        return nil, err
+    }
+
+    addrs, err := ief.Addrs()
+    if err !=nil{
+        return nil, err
+    }
+
+    tcpAddr := &net.TCPAddr{
+        IP: addrs[0].(*net.IPNet).IP,
+    }    
+    
+    return tcpAddr, nil
+}
 
 /*
  * Data Handling
@@ -85,7 +111,24 @@ func handleRequest(m *omap.OMap, in net.Conn) {
             if h != nil {
                 port := strconv.Itoa(int(h.ListenPort))
 
-                out, err := net.Dial("tcp", "127.0.0.1:" + port)
+                /*
+                 * Bind to eth0 IP address.
+                 * This is crucial for self discovery.
+                 * Some servers connects back to client at specific ports.
+                 * This allows them to directly reach the client at it's IP address.
+                 */
+
+                tcpAddr, err := getIP("eth0")
+                if err != nil {
+                    tcpAddr = &net.TCPAddr{
+                        IP: []byte{127,0,0,1},
+                    }    
+                }
+                
+                log.Debug("Binding to ", tcpAddr)
+                
+                d := net.Dialer{LocalAddr: tcpAddr}
+                out, err := d.Dial("tcp", "127.0.0.1:" + port)
                 // Connection failed, remove connection information from the list
                 if err != nil {
                     m.RemoveEl(el)
@@ -121,6 +164,12 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
                h.Config.Port, 
                h.ListenPort)
     
+    // TODO:Add condition for stateless 
+    // If this is first connection start listening on load balanced port
+    if m.Len() == 1 {
+        m.Userdata = listen(h.ListenPort, h.Config.Port)
+    }
+    
     // All required connections are established
     // inform the caller with async callback and 
     // unset cbTicker.
@@ -145,6 +194,35 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
                h.RemoteIP, 
                h.Config.Port, 
                h.ListenPort)
+    
+    // TODO:Add condition for stateless 
+    // If this is last connection then close listener
+    if m.Len() == 0 {
+        m.Userdata.Close()
+    }
+    
+}
+
+func listen(lhost string, lport string) (*net.Listener) {
+    addr := fmt.Sprintf("%s:%s", lhost, lport)
+    log.Debug("addr=", addr)
+
+    fmt.Printf("Listening on %s\n", addr)
+    l, err := net.Listen("tcp", addr)
+    utils.Check(err)
+
+    go func() {
+        for {
+            // Listen for an incoming connection.
+            conn, err := l.Accept()
+            utils.Check(err)
+
+            // Handle connections in a new goroutine.
+            go handleRequest(m, conn)
+        }            
+    }()
+    
+    return l
 }
 
 /*
@@ -153,7 +231,7 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
             
-    forEach(opts, func(opt string, rhost string, rport string, lhost string, lport string) {
+    forEach(opts, func(opt string, rhost string, rport string, lhost string, _type string, lport string) {
 
         //Store callback for later invocation
         if cb != nil {
@@ -161,9 +239,13 @@ func Process(passwd string, opts []string,  cb callback) {
             cb = nil            
         }
 
-        uname := rhost + "." + rport
+        uname := rhost
         log.Debug("uname=", uname)
 
+        if rport != "*" {
+            uname += "." + rport
+        }
+        
         //Create User
         u := user.New(uname, passwd)
         log.Debug("user=", u)
@@ -177,23 +259,6 @@ func Process(passwd string, opts []string,  cb callback) {
         // Monitor unix listening socker based on uname
         go server.Monitor(m, uname, ConnAddEv, ConnRemoveEv)
 
-        addr := fmt.Sprintf("%s:%s", lhost, lport)
-        log.Debug("addr=", addr)
-
-        fmt.Printf("Listening on %s\n", addr)
-        l, err := net.Listen("tcp", addr)
-        utils.Check(err)
-
-        go func() {
-            for {
-                // Listen for an incoming connection.
-                conn, err := l.Accept()
-                utils.Check(err)
-
-                // Handle connections in a new goroutine.
-                go handleRequest(m, conn)
-            }            
-        }()
     })
 
     // If options are non-zero then don't invoke callback now.
@@ -201,6 +266,4 @@ func Process(passwd string, opts []string,  cb callback) {
     if cb != nil {
         cb()
     }
-    
-
 }

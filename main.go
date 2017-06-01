@@ -79,6 +79,39 @@ func ulimit(num uint64){
 
 /*
  * Entrypoint
+ * Usecases: 
+
+ * For connecting stateless service
+ * trafficrouter --register --stateless app:80@lb
+ * trafficrouter --require  --stateless app:80@localhost
+
+ * For connecing stateful service
+ * trafficrouter --register --stateful mysql:80@app
+ * trafficrouter --require  --stateful mysql:80@localhost --on-connect MYSQL=$DIP:$DPORT service restart app
+
+ * For connecing service to itself
+ * trafficrouter --register --stateful nodes:*@nodes
+ * trafficrouter --require  --stateful nodes:*@localhost
+
+ * For stateful cluster (ex: mysql)
+ * trafficrouter --register  --stateful manager:1186@nodes
+ * trafficrouter --require  --stateful manager:1186@localhost
+
+ * trafficrouter --register --stateful manager:1186@mysql
+ * trafficrouter --require  --stateful manager:1186@localhost
+
+ * trafficrouter --register --stateful nodes:*@manager
+ * trafficrouter --require  --stateful nodes:*@localhost
+
+ * trafficrouter --register --stateful nodes:*@nodes
+ * trafficrouter --require  --stateful nodes:*@localhost
+
+ * trafficrouter --register --stateful nodes:*@mysql
+ * trafficrouter --require  --stateful nodes:*@localhost
+
+ * trafficrouter --register --stateful nodes:*@backup
+ * trafficrouter --require  --stateful nodes:*@localhost
+
  */
 func main() {
 

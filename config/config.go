@@ -127,7 +127,8 @@ func Send() {
     log.Debug("ppid = ", ppid)
 
     // Flock on pid file
-    fd = utils.LockFile(ppid)
+    ppidstr = strconv.Itoa(ppid)
+    fd = utils.LockFile(ppidstr)
     
     //Host to store connection information
     var h utils.Host
@@ -146,6 +147,11 @@ func Send() {
     // Get Current user
     u, _ := user.Current()
 
+    //TODO: if connection is stateful then don't write
+    // Set env variables
+    // if stateless {
+    //      write(u.Username, &h)
+    // }
     //Send host struct to user name unix socket.
     write(u.Username, &h)
     

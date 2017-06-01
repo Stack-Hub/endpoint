@@ -79,12 +79,13 @@ func BlockForever() {
 }
 
 
+
 /*
  * Lock file
  */
-func LockFile(pid int) int {
+func LockFile(filename string) int {
 
-    f, err := os.Create(RUNPATH + strconv.Itoa(pid))
+    f, err := os.Create(RUNPATH + filename)
     Check(err)
     
     fd := f.Fd()

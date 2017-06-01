@@ -18,7 +18,7 @@ check_perm() {
 check_perm
 
 ROOT_URL=https://get.dupper.co/trafficrouter
-VERSION=0.0.1
+VERSION=0.1.0
 BINARY=trafficrouter
 INSTALL_DIR=/usr/local
 
@@ -40,14 +40,13 @@ EOF
 unsupported_distro() {
     cat >&2 <<-'EOF'
     Error: Unsupported Distribution. 
-    Please follow instructions for binary installation from http://dupper.readthedocs.io/en/latest/installation.html#binary-installation.
 EOF
     exit 1
 }
 
 unsupported_os() {
     cat >&2 <<-'EOF'
-    Error: Unsupported OS. Dupper currently only supports Linux/Mac 64-bit OS.
+    Error: Unsupported OS. Trafficrouter currently only supports Linux 64-bit OS.
 EOF
     exit 1
 }
@@ -78,8 +77,6 @@ install() {
     # Check OS
     OS="$(uname -s)"
     case $OS in
-		Darwin)
-            ;;
 		Linux)
             ;;
 		*)

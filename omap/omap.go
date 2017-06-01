@@ -24,8 +24,9 @@ type Element struct {
 
 type OMap struct {
     nextIdx     * list.Element
-    elements      map[int]*Element
-    keyList      * list.List
+    elements    map[int]*Element
+    keyList     * list.List
+    Userdata    interface{}
 }
 
 func New() *OMap {
