@@ -58,7 +58,8 @@ type Portmap struct {
  */
 func (m *Portmap) sendEvents() {
     // Get exclusive lock on file to avoid corruption.
-    fd := utils.LockFile(utils.RUNPATH + m.filename)
+    fd := utils.LockFile(m.filename)
+    log.Printf("File %s locked fd = %d", m.filename, fd)
     
     // Reload file
     file, e := ioutil.ReadFile(utils.RUNPATH + m.filename)
@@ -95,7 +96,7 @@ func (m *Portmap) sendEvents() {
 /*
  *  New port map
  */
-func New(name string) (*Portmap, map[string]string, <- chan *Event) {
+func New(name string) (*Portmap, map[string]string, chan *Event) {
     
     m := Portmap{filename: name}
 
@@ -104,7 +105,7 @@ func New(name string) (*Portmap, map[string]string, <- chan *Event) {
     m.tempmap.m = make(map[string]string, 1)
     
     // Get exclusive lock on file to avoid corruption.
-    fd := utils.LockFile(utils.RUNPATH + m.filename)
+    fd := utils.LockFile(m.filename)
 
     // Read file
     file, e := ioutil.ReadFile(utils.RUNPATH + m.filename)
@@ -125,8 +126,11 @@ func New(name string) (*Portmap, map[string]string, <- chan *Event) {
 	go func() {
 		for {
 			select {
-			case  <-m.watcher.Event:
-                m.sendEvents()
+            case ev := <-m.watcher.Event:
+                log.Println("Recieved watcher event ", ev)
+                if !ev.IsAttrib() {
+                    m.sendEvents()
+                }
 			case err := <-m.watcher.Error:
 				log.Println("Watcher error:", err)
 			}
@@ -134,7 +138,7 @@ func New(name string) (*Portmap, map[string]string, <- chan *Event) {
 	}()
 
     // Start watcher
-	err = m.watcher.Watch(utils.RUNPATH + m.filename)
+	err = m.watcher.WatchFlags(utils.RUNPATH + m.filename, fsnotify.FSN_CREATE | fsnotify.FSN_MODIFY | fsnotify.FSN_DELETE )
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -196,11 +200,11 @@ func (m *Portmap) IsLeader() bool {
  */
 func (m *Portmap) Add(lport string, rport string) {
     
+    // Get exclusive lock on file to avoid corruption.
+    fd := utils.LockFile(m.filename)
+
     m.sendEvents()
     m.portmap.m[lport] = rport
-
-    // Get exclusive lock on file to avoid corruption.
-    fd := utils.LockFile(utils.RUNPATH + m.filename)
     
     m.save()
     

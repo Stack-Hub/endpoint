@@ -159,7 +159,7 @@ func isAllowed(reader *portmap.Portmap, pmap map[string]string, lport string) bo
  *  Process --regiser options
  */
 func procEvents(opt string, lhost string, rhost string,
-                passwd string, interval int, debug bool, mapReader *portmap.Portmap, events <- chan *portmap.Event) {
+                passwd string, interval int, debug bool, mapReader *portmap.Portmap, events chan *portmap.Event) {
     for {
         event := <-events
         if event.Type == portmap.ADDED {
