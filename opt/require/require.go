@@ -167,7 +167,7 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     // TODO:Add condition for stateless 
     // If this is first connection start listening on load balanced port
     if m.Len() == 1 {
-        m.Userdata = listen(h.ListenPort, h.Config.Port)
+        m.Userdata = listen(m, strconv.Itoa(int(h.ListenPort)), strconv.Itoa(int(h.Config.Port)))
     }
     
     // All required connections are established
@@ -198,12 +198,12 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     // TODO:Add condition for stateless 
     // If this is last connection then close listener
     if m.Len() == 0 {
-        m.Userdata.Close()
+        m.Userdata.(net.Listener).Close()
     }
     
 }
 
-func listen(lhost string, lport string) (*net.Listener) {
+func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
     addr := fmt.Sprintf("%s:%s", lhost, lport)
     log.Debug("addr=", addr)
 
@@ -222,7 +222,7 @@ func listen(lhost string, lport string) (*net.Listener) {
         }            
     }()
     
-    return l
+    return &l
 }
 
 /*

@@ -26,6 +26,8 @@ import (
     log "github.com/Sirupsen/logrus"
 )
 
+var goroutines map[string]chan bool = make(map[string]chan bool, 1)
+
 /*
  *  forEach parser callback
  */
@@ -40,13 +42,8 @@ func parse(str string) (string, string, string) {
 	if len(str) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost\n", str)))
 	}
-    
-    part7 := ""
-    if parts[5] != "?" {
-        part7 = parts[7]
-    }
-    
-    return parts[1], parts[2], parts[3], parts[5][0], part7
+        
+    return parts[1], parts[2], parts[3]
 }
 
 /*
@@ -58,40 +55,82 @@ func forEach(opts []string, cb parsecb) {
 
         log.Debug("laddr=", lhost, ",",
                   "lport=", lport, ",",
-                  "rport=", rport)
+                  "rhost=", rhost)
         
         cb(opt, lhost, lport, rhost)
     }
 }
 
 /*
- *  Connect to remote host and periodically check the state.
+ *  make goroutine channel and Connect
  */
-func connect(opt string, lhost string, lport string, rhost string,
-             passwd string, interval int, debug bool) {
+func connect(opt string, lhost string, lport string, rhost string, rport string,
+             passwd string, interval int, mapReader *portmap.Portmap, debug bool) {
+
+    done := make(chan bool)
+    goroutines[lport] = done
+    iconnect(opt, lhost, lport, rhost, rport, passwd, interval, mapReader, debug, done)
+} 
+
+/*
+ *  Connect internal to remote host and periodically check the state.
+ */
+func iconnect(opt string, lhost string, lport string, rhost string, rport string,
+             passwd string, interval int, mapReader *portmap.Portmap, debug bool, isClosed chan bool) {
 
     uname := lhost + "." + lport
     for {                  
-
-        //if the port map is not present in map file {
-        //  return
-        //}
         
         //Check if host exists
         ipArr, _ := net.LookupHost(rhost)
         
+        // Diconnect all ssh connection if channel is closed and return.
+        select {
+            case _, ok := <- isClosed:
+                if !ok {
+                    for _, ip := range ipArr {
+                        addr := uname + "@" + ip
+                        ssh.Disconnect(addr)
+                    }
+                    return
+                }
+            default:
+            /* no-op */
+        }
+
+        
         for _, ip := range ipArr {
             addr := uname + "@" + ip
 
+            skip := false
+            
             //Make sure to not connect to itself for nodes:* scenario
+            laddrs, _ := net.InterfaceAddrs()
+            for _, a := range laddrs {
+                if ip == a.String() {
+                    skip = true
+                    break
+                }
+            }
 
+            // Skip is remote IP is one of local interface ip
+            if skip {
+                continue 
+            }
+            
             // connect to dynamic port.
             // store assigned port in map
             // Use the same port for rest of the connections.
-            
             if !ssh.IsConnected(addr) {
                 fmt.Println("Connecting...", addr)
-                ssh.Connect(uname, passwd, ip, lport, debug)
+                mappedRport := ssh.Connect(uname, passwd, ip, lport, rport, debug)
+                
+                // Add this port mapping to portmap and save it.
+                if rport == "0" {
+                    mapReader.Add(lport, mappedRport)
+                    rport = mappedRport
+                }
+                
             }            
         }
 
@@ -99,26 +138,36 @@ func connect(opt string, lhost string, lport string, rhost string,
     }        
 }
 
-func isAllowed(reader *portmap.Portmap, pmap map[string]int, lport string) bool {
+/*
+ *  Check if this instance of trafficrouter should initiate the connection.
+ */
+func isAllowed(reader *portmap.Portmap, pmap map[string]string, lport string) bool {
 
     if rport, ok := pmap[lport]; ok {
-        return true
-    } else {
-        if reader.IsLeader() {
+        if rport == "0" {
+            if reader.IsLeader() {
+                return true
+            }            
+        } else {
             return true
         }
     }
     return false
 }
 
+/*
+ *  Process --regiser options
+ */
 func procEvents(opt string, lhost string, rhost string,
-                passwd string, interval int, debug bool, events chan *portmap.Event) {
+                passwd string, interval int, debug bool, mapReader *portmap.Portmap, events <- chan *portmap.Event) {
     for {
         event := <-events
         if event.Type == portmap.ADDED {
-            go connect(opt, lhost, event.Lport, rhost, passwd, interval, debug)
+            go connect(opt, lhost, event.Lport, rhost, event.Rport, passwd, interval, mapReader, debug)
         } else if event.Type == portmap.DELETED {
-            // Disconnect 
+            // Disconnect all connections for LPORT by closing goroutine channel.
+            close(goroutines[event.Lport])
+            delete(goroutines, event.Lport)
         }
     }    
 }
@@ -129,24 +178,27 @@ func procEvents(opt string, lhost string, rhost string,
 func Process(passwd string, opts []string, count int, interval int, debug bool) {
     log.Debug(opts)
     
-    forEach(opts, func(opt string, lhost string, lport string, rhost string) {
-        mapReader, pmap, events := portmap.New(lhost + "." + lport)
-        
-        // For all port it map file contains entry then connect mapped ports and wait for new ones.
+    forEach(opts, func(opt string, lhost string, lport string, rhost string) {        
+        // For all port if map file contains entry then connect to mapped ports and wait for new ones.
+        mapReader, pmap, events := portmap.New(lhost + "." + lport)            
+
         if lport == "*" {
             for k, v := range pmap {
                 if isAllowed(mapReader, pmap, k) {
-                    go connect(opt, lhost, lport, rhost, passwd, interval, debug)
+                    go connect(opt, lhost, lport, rhost, v, passwd, interval, mapReader, debug)
                 }                    
             }
             
             // Wait for other ports 
-            go procEvents(opt, lhost, rhost, passwd, interval, debug, events)
+            go procEvents(opt, lhost, rhost, passwd, interval, debug, mapReader, events)
             
         } else {
-            // If port mapping exist then connect using that else let ssh assign new random port
             if isAllowed(mapReader, pmap, lport) {
-                go connect(opt, lhost, lport, rhost, passwd, interval, debug)
+                rport := pmap[lport]
+                go connect(opt, lhost, lport, rhost, rport, passwd, interval, mapReader, debug)
+            } else {
+                // Wait for other ports 
+                go procEvents(opt, lhost, rhost, passwd, interval, debug, mapReader, events)
             }
         }
     })       

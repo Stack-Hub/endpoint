@@ -16,6 +16,7 @@ package ssh
 import (
     "os"
 	"os/exec"
+    "strings"
     
     "github.com/duppercloud/trafficrouter/utils"
     log "github.com/Sirupsen/logrus"
@@ -38,7 +39,7 @@ func wait(cmd *exec.Cmd, addr string){
 /*
  * SSH client connect
  */
-func Connect(u string, pass string, ip string, p string, debug bool) *exec.Cmd {
+func Connect(u string, pass string, ip string, lport string, rport string, debug bool) (string) {
 
     isDebug := func() string {
         if debug == true {
@@ -54,10 +55,10 @@ func Connect(u string, pass string, ip string, p string, debug bool) *exec.Cmd {
                      "-o", "StrictHostkeyChecking=no", 
                      "-o", "UserKnownHostsFile=/dev/null", 
                      "-o", "SendEnv=SSH_RFWD", 
-                     "-R", "0:localhost:" + p, u + "@" + ip, 
+                     "-R", rport + ":localhost:" + lport, u + "@" + ip, 
                      "--",
                      isDebug(),
-                     "{\"port\":" + p + "}"}
+                     "{\"port\":" + lport + "}"}
 
     addr := u + "@" + ip
     log.Debug("Connecting ", addr)
@@ -70,13 +71,23 @@ func Connect(u string, pass string, ip string, p string, debug bool) *exec.Cmd {
     err := c.Start()
     utils.Check(err)
     
+    var dynport string
+    
+    // Potential race condition, need to make sure ssh is connected before querying env
+    for _, env := range c.Env {
+        if strings.Contains(env, "SSHRFWD") {
+            sshrfwd := strings.Split(env, "=")
+            dynport = sshrfwd[1]
+        }
+    }
+    
     //Add to Client store
     clients[addr] = c
 
     //Remove client when disconnected
     go wait(c, addr)
     
-    return c
+    return dynport
 }
 
 /*
@@ -95,8 +106,11 @@ func IsConnected(addr string) bool {
 /*
  * Diconnect client
  */
-func Disconnect(cmd *exec.Cmd) {
- 
-    err := cmd.Process.Kill()
-    utils.Check(err)
+func Disconnect(addr string) {
+    cmd := clients[addr]
+
+    if cmd != nil {
+        err := cmd.Process.Kill()
+        utils.Check(err)        
+    }
 }
