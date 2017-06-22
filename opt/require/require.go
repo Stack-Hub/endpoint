@@ -204,7 +204,7 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 }
 
 func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
-    addr := fmt.Sprintf("%s:%s", lhost, lport)
+    addr := fmt.Sprintf("%s:%s", "localhost", lport)
     log.Debug("addr=", addr)
 
     fmt.Printf("Listening on %s\n", addr)

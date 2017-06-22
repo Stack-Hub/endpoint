@@ -82,22 +82,25 @@ func BlockForever() {
 /*
  * Lock file
  */
-func LockFile(filename string) int {
+func LockFile(filename string) *os.File {
 
-    f, err := os.Create(RUNPATH + filename)
+    f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0666)
     Check(err)
     
     fd := f.Fd()
 	err = unix.Flock(int(fd), syscall.LOCK_EX)
     Check(err)
     
-    return int(fd)
+    return f
 }
 
 /*
  * Unlock file to unblock server
  */
-func UnlockFile(fd int) {
-	err := unix.Flock(fd, syscall.LOCK_UN)
+func UnlockFile(f *os.File) {
+    fd := f.Fd()
+    err := unix.Flock(int(fd), syscall.LOCK_UN)
     Check(err)
+    f.Sync()
+    f.Close()
 }

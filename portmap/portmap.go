@@ -35,8 +35,8 @@ type Event struct {
 }
 
 type format struct {
-    m map[string]string `json:"list"`
-    l bool              `json:"leader"`
+    M map[string]string `json:"list"`
+    L int               `json:"leader"`
 }
 
 
@@ -44,53 +44,55 @@ type format struct {
  *  Map struct for port mapping 
  */
 type Portmap struct {
-    portmap  format
-    tempmap  format
+    portmap  format 
+    tempmap  format 
     filename string
     watcher  *fsnotify.Watcher
     event    chan *Event
     isLeader bool
+    isReading bool
 }
 
+func itob(b int) bool {
+    if b > 0 {
+        return true
+    }
+    return false
+ }
 
 /*
  *  Reload file content and generate events to the client.
  */
-func (m *Portmap) sendEvents() {
-    // Get exclusive lock on file to avoid corruption.
-    fd := utils.LockFile(m.filename)
-    log.Printf("File %s locked fd = %d", m.filename, fd)
-    
-    // Reload file
-    file, e := ioutil.ReadFile(utils.RUNPATH + m.filename)
-    if e != nil {
-        fmt.Printf("File read error: %v\n", e)
-        return
-    }
-	
-    // New content in temp map
-    json.Unmarshal(file, &m.tempmap)
-    
-    // For new entries in temp map generate ADDED event
-    for k, v := range m.tempmap.m {
-        if _, ok := m.portmap.m[k]; !ok {
-            m.event <- &Event{Lport: k, Rport: v, Type: ADDED}
+func (m *Portmap) sendEvents(force bool) {
+    if !m.isReading || force {        
+        
+        // Reload file
+        file, e := ioutil.ReadFile(m.filename)
+        if e != nil {
+            fmt.Printf("File read error: %v\n", e)
+            return
         }
-    }
 
-    // For missing entries from port map generate DELETED event
-    for k, v := range m.portmap.m {
-        if _, ok := m.tempmap.m[k]; !ok {
-            m.event <- &Event{Lport: k, Rport: v, Type: DELETED}
+        // New content in temp map
+        json.Unmarshal(file, &m.tempmap)
+
+        // For new entries in temp map generate ADDED event
+        for k, v := range m.tempmap.M {
+            if _, ok := m.portmap.M[k]; !ok {
+                m.event <- &Event{Lport: k, Rport: v, Type: ADDED}
+            }
         }
-    }
-    
-    // Update portmap to new loaded map.
-    m.portmap = m.tempmap
 
-    // Release file lock
-    utils.UnlockFile(fd)
-    
+        // For missing entries from port map generate DELETED event
+        for k, v := range m.portmap.M {
+            if _, ok := m.tempmap.M[k]; !ok {
+                m.event <- &Event{Lport: k, Rport: v, Type: DELETED}
+            }
+        }
+
+        // Update portmap to new loaded map.
+        m.portmap = m.tempmap
+    }    
 }
 
 /*
@@ -98,22 +100,37 @@ func (m *Portmap) sendEvents() {
  */
 func New(name string) (*Portmap, map[string]string, chan *Event) {
     
-    m := Portmap{filename: name}
+    m := Portmap{filename: utils.RUNPATH + name}
 
     // initilize members
     m.event = make(chan *Event, 10)
-    m.tempmap.m = make(map[string]string, 1)
+    m.tempmap.M = make(map[string]string, 1)
     
-    // Get exclusive lock on file to avoid corruption.
-    fd := utils.LockFile(m.filename)
-
+    log.Debug("m.filename=", m.filename)
+    
     // Read file
-    file, e := ioutil.ReadFile(utils.RUNPATH + m.filename)
+    file, e := ioutil.ReadFile(m.filename)
     if e != nil {
         fmt.Printf("File read error: %v\n", e)
         return nil, nil, nil
     }
+    	
+    // Read content
+    json.Unmarshal(file, &m.portmap)
     
+    if len(m.portmap.M) == 0 {
+        m.portmap.M = make(map[string]string, 1)
+    }    
+    
+    // Set map leader
+    m.isLeader = !itob(m.portmap.L)
+    
+    // Disallow other to become leader.
+    m.portmap.L = 1
+        
+    // Save updated map
+    m.save()
+
     // Get watcher for the file events
     var err error
     m.watcher, err = fsnotify.NewWatcher()
@@ -128,9 +145,7 @@ func New(name string) (*Portmap, map[string]string, chan *Event) {
 			select {
             case ev := <-m.watcher.Event:
                 log.Println("Recieved watcher event ", ev)
-                if !ev.IsAttrib() {
-                    m.sendEvents()
-                }
+                m.sendEvents(false)
 			case err := <-m.watcher.Error:
 				log.Println("Watcher error:", err)
 			}
@@ -138,46 +153,39 @@ func New(name string) (*Portmap, map[string]string, chan *Event) {
 	}()
 
     // Start watcher
-	err = m.watcher.WatchFlags(utils.RUNPATH + m.filename, fsnotify.FSN_CREATE | fsnotify.FSN_MODIFY | fsnotify.FSN_DELETE )
+	err = m.watcher.WatchFlags(m.filename, fsnotify.FSN_CREATE | fsnotify.FSN_MODIFY | fsnotify.FSN_DELETE )
 	if err != nil {
 		log.Fatal(err)
 	}
-	
-    // Read content
-    json.Unmarshal(file, &m.portmap)
     
-    if len(m.portmap.m) == 0 {
-        m.portmap.m = make(map[string]string, 1)
-    }    
     
-    // Set map leader.
-    m.isLeader = !m.portmap.l 
-    
-    // Disallow other to below leader.
-    m.portmap.l = true
-    
-    // Save updated map
-    m.save()
-
-    // Release file lock
-    utils.UnlockFile(fd)
-    
-    return &m, m.portmap.m, m.event
+    return &m, m.portmap.M, m.event
 }
 
 /*
  *  Save port map file
  */
 func (m * Portmap) save() {
-    jsonp, err := json.Marshal(m.portmap)
+    jsonp, err := json.Marshal(&m.portmap)
     if err != nil {
         fmt.Println(err)
     }
     
-    err = ioutil.WriteFile(utils.RUNPATH + m.filename, jsonp, 0644)
+    log.Debug("portmap = ", string(jsonp))
+    
+    // Get exclusive lock on file to avoid corruption.
+    f := utils.LockFile(m.filename)     
+
+    //TODO: Add write count check
+    _, err = f.Write(jsonp)
     if err != nil {
         fmt.Println("Error writing file")
     }   
+
+    log.Debug("Wrote map file = ", string(jsonp))
+    
+    // Release file lock
+    utils.UnlockFile(f) 
 }
 
 /*
@@ -199,16 +207,15 @@ func (m *Portmap) IsLeader() bool {
  *  Add port mapping
  */
 func (m *Portmap) Add(lport string, rport string) {
-    
-    // Get exclusive lock on file to avoid corruption.
-    fd := utils.LockFile(m.filename)
+    m.isReading = true
 
-    m.sendEvents()
-    m.portmap.m[lport] = rport
+    m.sendEvents(true)
+    m.portmap.M[lport] = rport
+    
+    log.Debug("m.portmap", m.portmap)
     
     m.save()
     
-    // Release file lock
-    utils.UnlockFile(fd)
+    m.isReading = false
     
 }

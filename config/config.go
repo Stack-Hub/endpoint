@@ -27,13 +27,13 @@ import (
     log "github.com/Sirupsen/logrus"    
 )
 
-var fd int
+var fptr *os.File
 
 /*
  * Cleanup on termination.
  */
 func Cleanup() {
-    utils.UnlockFile(fd)    
+    utils.UnlockFile(fptr)    
 }
 
 
@@ -128,7 +128,7 @@ func Send() {
 
     // Flock on pid file
     ppidstr := strconv.Itoa(ppid)
-    fd = utils.LockFile(ppidstr)
+    fptr = utils.LockFile(utils.RUNPATH + ppidstr)
     
     //Host to store connection information
     var h utils.Host
@@ -156,6 +156,6 @@ func Send() {
     write(u.Username, &h)
     
     // Wait for Interrupt or Parent exit
-    wait(fd)
+    wait(fptr)
 
 }

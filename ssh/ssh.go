@@ -14,8 +14,11 @@
 package ssh
 
 import (
+    "fmt"
     "os"
 	"os/exec"
+    "bufio"
+    "strconv"
     "strings"
     
     "github.com/duppercloud/trafficrouter/utils"
@@ -63,23 +66,41 @@ func Connect(u string, pass string, ip string, lport string, rport string, debug
     addr := u + "@" + ip
     log.Debug("Connecting ", addr)
     
-    os.Setenv("LD_PRELOAD","/usr/lib/trafficrouter/rfwd.so")
+    if rport == "0" {
+        os.Setenv("LD_PRELOAD","/usr/lib/trafficrouter/rfwd.so")
+    } else
+    {
+        os.Setenv("SSH_RFWD",rport)
+    }
 
 	c := exec.Command(cmd, args...)    
-    c.Stdout = os.Stdout
-    c.Stderr = os.Stderr
-    err := c.Start()
+
+    cmdReader, err := c.StderrPipe()
     utils.Check(err)
+
+    scanner := bufio.NewScanner(cmdReader)
     
-    var dynport string
-    
-    // Potential race condition, need to make sure ssh is connected before querying env
-    for _, env := range c.Env {
-        if strings.Contains(env, "SSHRFWD") {
-            sshrfwd := strings.Split(env, "=")
-            dynport = sshrfwd[1]
+    c.Stdout = os.Stdout
+    err = c.Start()
+    utils.Check(err)
+        
+    var dynport int
+
+    for scanner.Scan() {
+        output := scanner.Text()
+        if strings.Contains(output, "Connection refused") {
+            break
+        }
+        
+        num, _ := fmt.Sscanf(output, "Allocated port %d for remote forward", &dynport)
+        log.Debug(scanner.Text())
+        if num == 1 {
+            break
         }
     }
+
+    
+    log.Debug("dynport=", dynport)
     
     //Add to Client store
     clients[addr] = c
@@ -87,7 +108,7 @@ func Connect(u string, pass string, ip string, lport string, rport string, debug
     //Remove client when disconnected
     go wait(c, addr)
     
-    return dynport
+    return strconv.Itoa(dynport)
 }
 
 /*

@@ -11,7 +11,7 @@ import (
     "github.com/rainycape/dl"
 )
 
-// go build -buildmode=c-shared -o listener.so listener.go
+// go build -buildmode=c-shared -o rfwd.so rfwd.go
 func main() {}
 
 //export write

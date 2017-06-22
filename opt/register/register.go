@@ -104,7 +104,7 @@ func iconnect(opt string, lhost string, lport string, rhost string, rport string
 
             skip := false
             
-            //Make sure to not connect to itself for nodes:* scenario
+            //Make sure to not connect to itself for container:* scenario
             laddrs, _ := net.InterfaceAddrs()
             for _, a := range laddrs {
                 if ip == a.String() {
@@ -124,6 +124,7 @@ func iconnect(opt string, lhost string, lport string, rhost string, rport string
             if !ssh.IsConnected(addr) {
                 fmt.Println("Connecting...", addr)
                 mappedRport := ssh.Connect(uname, passwd, ip, lport, rport, debug)
+                log.Debug("mappedPort=", mappedRport)
                 
                 // Add this port mapping to portmap and save it.
                 if rport == "0" {
@@ -151,6 +152,8 @@ func isAllowed(reader *portmap.Portmap, pmap map[string]string, lport string) bo
         } else {
             return true
         }
+    } else {
+        return true
     }
     return false
 }
@@ -178,9 +181,12 @@ func procEvents(opt string, lhost string, rhost string,
 func Process(passwd string, opts []string, count int, interval int, debug bool) {
     log.Debug(opts)
     
-    forEach(opts, func(opt string, lhost string, lport string, rhost string) {        
+    forEach(opts, func(opt string, lhost string, lport string, rhost string) {    
+        log.Debug("opt=", opt)
+        
         // For all port if map file contains entry then connect to mapped ports and wait for new ones.
         mapReader, pmap, events := portmap.New(lhost + "." + lport)            
+        log.Debug("mapReader=", mapReader, " pmap", pmap, " event chan =", events)
 
         if lport == "*" {
             for k, v := range pmap {
@@ -195,6 +201,13 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
         } else {
             if isAllowed(mapReader, pmap, lport) {
                 rport := pmap[lport]
+
+                if rport == "" {
+                    rport = "0"
+                }
+                
+                log.Debug("rport=", rport)
+
                 go connect(opt, lhost, lport, rhost, rport, passwd, interval, mapReader, debug)
             } else {
                 // Wait for other ports 

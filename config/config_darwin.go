@@ -28,7 +28,7 @@ import (
 /*
  * Wait for parent to exit.
  */
-func wait(fd int) {
+func wait(fptr *os.File) {
 
     sigs := make(chan os.Signal, 1)    
     signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
@@ -36,7 +36,7 @@ func wait(fd int) {
     go func() {
         sig := <-sigs
         log.Debug(sig)
-        utils.UnlockFile(fd)
+        utils.UnlockFile(fptr)
         os.Exit(1)
     }()
     
