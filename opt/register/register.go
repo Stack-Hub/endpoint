@@ -127,7 +127,7 @@ func iconnect(opt string, lhost string, lport string, rhost string, rport string
                 log.Debug("mappedPort=", mappedRport)
                 
                 // Add this port mapping to portmap and save it.
-                if rport == "0" {
+                if rport == "0" && mappedRport != "0" {
                     mapReader.Add(lport, mappedRport)
                     rport = mappedRport
                 }
@@ -153,7 +153,9 @@ func isAllowed(reader *portmap.Portmap, pmap map[string]string, lport string) bo
             return true
         }
     } else {
-        return true
+        if reader.IsLeader() {
+            return true
+        }            
     }
     return false
 }
@@ -184,11 +186,13 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
     forEach(opts, func(opt string, lhost string, lport string, rhost string) {    
         log.Debug("opt=", opt)
         
-        // For all port if map file contains entry then connect to mapped ports and wait for new ones.
-        mapReader, pmap, events := portmap.New(lhost + "." + lport)            
-        log.Debug("mapReader=", mapReader, " pmap", pmap, " event chan =", events)
-
         if lport == "*" {
+            fname := lhost
+
+            // For all port if map file contains entry then connect to mapped ports and wait for new ones.
+            mapReader, pmap, events := portmap.New(fname)            
+            log.Debug("mapReader=", mapReader, " pmap", pmap, " event chan =", events)
+
             for k, v := range pmap {
                 if isAllowed(mapReader, pmap, k) {
                     go connect(opt, lhost, lport, rhost, v, passwd, interval, mapReader, debug)
@@ -199,6 +203,13 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
             go procEvents(opt, lhost, rhost, passwd, interval, debug, mapReader, events)
             
         } else {
+            
+            fname := lhost + "." + lport
+            
+            // For all port if map file contains entry then connect to mapped ports and wait for new ones.
+            mapReader, pmap, events := portmap.New(fname)            
+            log.Debug("mapReader=", mapReader, " pmap", pmap, " event chan =", events)
+            
             if isAllowed(mapReader, pmap, lport) {
                 rport := pmap[lport]
 

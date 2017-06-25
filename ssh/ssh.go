@@ -68,8 +68,7 @@ func Connect(u string, pass string, ip string, lport string, rport string, debug
     
     if rport == "0" {
         os.Setenv("LD_PRELOAD","/usr/lib/trafficrouter/rfwd.so")
-    } else
-    {
+    } else {
         os.Setenv("SSH_RFWD",rport)
     }
 
@@ -83,32 +82,36 @@ func Connect(u string, pass string, ip string, lport string, rport string, debug
     c.Stdout = os.Stdout
     err = c.Start()
     utils.Check(err)
-        
-    var dynport int
 
-    for scanner.Scan() {
-        output := scanner.Text()
-        if strings.Contains(output, "Connection refused") {
-            break
-        }
-        
-        num, _ := fmt.Sscanf(output, "Allocated port %d for remote forward", &dynport)
-        log.Debug(scanner.Text())
-        if num == 1 {
-            break
-        }
-    }
-
-    
-    log.Debug("dynport=", dynport)
-    
     //Add to Client store
     clients[addr] = c
 
     //Remove client when disconnected
     go wait(c, addr)
     
-    return strconv.Itoa(dynport)
+
+    if rport == "0" {    
+        var dynport int
+
+        for scanner.Scan() {
+            output := scanner.Text()
+            if strings.Contains(output, "Connection refused") {
+                break
+            }
+
+            num, _ := fmt.Sscanf(output, "Allocated port %d for remote forward", &dynport)
+            log.Debug(scanner.Text())
+            if num == 1 {
+                break
+            }
+        }
+
+        log.Debug("dynport=", dynport)
+
+        return strconv.Itoa(dynport)
+    }
+    
+    return rport
 }
 
 /*

@@ -17,6 +17,7 @@ import (
     "fmt"
     "io/ioutil"
     "encoding/json"
+    "os"
     
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/howeyc/fsnotify"
@@ -39,7 +40,6 @@ type format struct {
     L int               `json:"leader"`
 }
 
-
 /*
  *  Map struct for port mapping 
  */
@@ -50,7 +50,7 @@ type Portmap struct {
     watcher  *fsnotify.Watcher
     event    chan *Event
     isLeader bool
-    isReading bool
+    file     *os.File
 }
 
 func itob(b int) bool {
@@ -63,18 +63,111 @@ func itob(b int) bool {
 /*
  *  Reload file content and generate events to the client.
  */
-func (m *Portmap) sendEvents(force bool) {
-    if !m.isReading || force {        
+func (m *Portmap) read(data *format) bool {
+    // Get exclusive lock on file to avoid corruption.
+    m.file = utils.LockFile(m.filename)     
+
+    // Read file
+    bytes, e := ioutil.ReadAll(m.file)
+    if e != nil {
+        fmt.Printf("File read error: %v\n", e)
+        return false
+    }
+    	
+    // Parse content
+    json.Unmarshal(bytes, data)
+    
+    // Select Leader based on file flag.
+    m.leaderSelect()
+    
+    // Release file lock
+    utils.UnlockFile(m.file)
+    m.file = nil
+    return true
+}
+
+
+/*
+ *  Write port map file
+ */
+func (m * Portmap) write() bool {
+    
+    isLocked := false
+    
+    if m.file == nil {
+        // Get exclusive lock on file to avoid corruption.
+        m.file = utils.LockFile(m.filename)             
+        isLocked = true
+    }
+
+    // encode content
+    jsonp, err := json.Marshal(&m.portmap)
+    if err != nil {
+        fmt.Println(err)
+        return false
+    }
+    
+    log.Debug("portmap = ", string(jsonp))
+    
+    //TODO: Add write count check
+    _, err = m.file.Write(jsonp)
+    if err != nil {
+        fmt.Println("Error writing file")
+        return false
+    }   
+    
+    if isLocked {
+        // Release file lock
+        utils.UnlockFile(m.file) 
+        m.file = nil
+    }
+
+    return true
+}
+
+/*
+ *  If this is first reader then mark it as leader, and disallow others
+ */
+func (m *Portmap) leaderSelect() {
+    // Set map leader
+    m.isLeader = !itob(m.portmap.L)
+
+    // Save to diallow others to become leader
+    if m.isLeader {
+        // Disallow other to become leader.
+        m.portmap.L = 1
+
+        // Save updated map
+        m.write()
+    }
+}
+
+/*
+ *  Reload file content and generate events to the client.
+ */
+func (m *Portmap) leaderDeselect() {
+    // Save to diallow others to become leader
+    if m.isLeader {
+        // Disallow other to become leader.
+        m.portmap.L = 0
+
+        // Save updated map
+        m.write()
+    }
+}
+
+/*
+ *  Reload file content and generate events to the client.
+ */
+func (m *Portmap) update() {
+
+    if m.file != nil {        
         
         // Reload file
-        file, e := ioutil.ReadFile(m.filename)
-        if e != nil {
-            fmt.Printf("File read error: %v\n", e)
+        ok := m.read(&m.tempmap)
+        if !ok {
             return
         }
-
-        // New content in temp map
-        json.Unmarshal(file, &m.tempmap)
 
         // For new entries in temp map generate ADDED event
         for k, v := range m.tempmap.M {
@@ -108,34 +201,21 @@ func New(name string) (*Portmap, map[string]string, chan *Event) {
     
     log.Debug("m.filename=", m.filename)
     
-    // Read file
-    file, e := ioutil.ReadFile(m.filename)
-    if e != nil {
-        fmt.Printf("File read error: %v\n", e)
+    // Reload file
+    ok := m.read(&m.portmap)
+    if !ok {
         return nil, nil, nil
     }
-    	
-    // Read content
-    json.Unmarshal(file, &m.portmap)
-    
+        
     if len(m.portmap.M) == 0 {
         m.portmap.M = make(map[string]string, 1)
     }    
-    
-    // Set map leader
-    m.isLeader = !itob(m.portmap.L)
-    
-    // Disallow other to become leader.
-    m.portmap.L = 1
         
-    // Save updated map
-    m.save()
-
     // Get watcher for the file events
     var err error
     m.watcher, err = fsnotify.NewWatcher()
     if err != nil {
-        fmt.Printf("File watch error: %v\n", e)
+        fmt.Printf("File watch error: %v\n", err)
         return nil, nil, nil
 	}
     
@@ -145,7 +225,7 @@ func New(name string) (*Portmap, map[string]string, chan *Event) {
 			select {
             case ev := <-m.watcher.Event:
                 log.Println("Recieved watcher event ", ev)
-                m.sendEvents(false)
+                m.update()
 			case err := <-m.watcher.Error:
 				log.Println("Watcher error:", err)
 			}
@@ -158,42 +238,17 @@ func New(name string) (*Portmap, map[string]string, chan *Event) {
 		log.Fatal(err)
 	}
     
-    
     return &m, m.portmap.M, m.event
-}
-
-/*
- *  Save port map file
- */
-func (m * Portmap) save() {
-    jsonp, err := json.Marshal(&m.portmap)
-    if err != nil {
-        fmt.Println(err)
-    }
-    
-    log.Debug("portmap = ", string(jsonp))
-    
-    // Get exclusive lock on file to avoid corruption.
-    f := utils.LockFile(m.filename)     
-
-    //TODO: Add write count check
-    _, err = f.Write(jsonp)
-    if err != nil {
-        fmt.Println("Error writing file")
-    }   
-
-    log.Debug("Wrote map file = ", string(jsonp))
-    
-    // Release file lock
-    utils.UnlockFile(f) 
 }
 
 /*
  *  Close and cleanup resources
  */
 func (m *Portmap) Close() {
-    /* ... do stuff ... */
+    /* Stop watching */
 	m.watcher.Close()    
+    
+    m.leaderDeselect()
 }
 
 /*
@@ -207,15 +262,7 @@ func (m *Portmap) IsLeader() bool {
  *  Add port mapping
  */
 func (m *Portmap) Add(lport string, rport string) {
-    m.isReading = true
-
-    m.sendEvents(true)
     m.portmap.M[lport] = rport
-    
     log.Debug("m.portmap", m.portmap)
-    
-    m.save()
-    
-    m.isReading = false
-    
+    m.write()    
 }
