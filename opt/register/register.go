@@ -190,7 +190,7 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
             fname := lhost
 
             // For all port if map file contains entry then connect to mapped ports and wait for new ones.
-            mapReader, pmap, events := portmap.New(fname)            
+            mapReader, pmap, events := portmap.New(fname, true)            
             log.Debug("mapReader=", mapReader, " pmap", pmap, " event chan =", events)
 
             for k, v := range pmap {
@@ -207,7 +207,7 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
             fname := lhost + "." + lport
             
             // For all port if map file contains entry then connect to mapped ports and wait for new ones.
-            mapReader, pmap, events := portmap.New(fname)            
+            mapReader, pmap, events := portmap.New(fname, true)            
             log.Debug("mapReader=", mapReader, " pmap", pmap, " event chan =", events)
             
             if isAllowed(mapReader, pmap, lport) {

@@ -77,14 +77,30 @@ func BlockForever() {
     select {}
 }
 
+/*
+ * Convert int to bool
+ */
+func Itob(b int) bool {
+    if b > 0 {
+        return true
+    }
+    return false
+ }
+
 
 
 /*
  * Lock file
  */
-func LockFile(filename string) *os.File {
+func LockFile(filename string, truncate bool) *os.File {
 
-    f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0666)
+    mode := os.O_RDWR|os.O_CREATE
+    
+    if truncate {
+        mode = mode|os.O_TRUNC
+    }
+    
+    f, err := os.OpenFile(filename, mode, 0666)
     Check(err)
     
     fd := f.Fd()
