@@ -33,16 +33,16 @@ var clients map[string]*exec.Cmd = make(map[string]*exec.Cmd, 1)
 /*
  * Wait fo client to disconnect
  */
-func wait(cmd *exec.Cmd, addr string){
+func wait(cmd *exec.Cmd, hash string){
     cmd.Wait()
-    delete(clients, addr)
-    log.Debug("Disconnected ", addr)
+    delete(clients, hash)
+    log.Debug("Disconnected ", hash)
 }
 
 /*
  * SSH client connect
  */
-func Connect(u string, pass string, ip string, lport string, rport string, debug bool) (string) {
+func Connect(u string, pass string, ip string, lport string, rport string, hash string, debug bool) (string) {
 
     isDebug := func() string {
         if debug == true {
@@ -63,8 +63,7 @@ func Connect(u string, pass string, ip string, lport string, rport string, debug
                      isDebug(),
                      "{\"port\":" + lport + "}"}
 
-    addr := u + "@" + ip
-    log.Debug("Connecting ", addr)
+    log.Debug("Connecting ", hash)
     
     if rport == "0" {
         os.Setenv("LD_PRELOAD","/usr/lib/trafficrouter/rfwd.so")
@@ -84,10 +83,10 @@ func Connect(u string, pass string, ip string, lport string, rport string, debug
     utils.Check(err)
 
     //Add to Client store
-    clients[addr] = c
+    clients[hash] = c
 
     //Remove client when disconnected
-    go wait(c, addr)
+    go wait(c, hash)
     
 
     if rport == "0" {    
@@ -117,8 +116,8 @@ func Connect(u string, pass string, ip string, lport string, rport string, debug
 /*
  * Check if client is already connected
  */
-func IsConnected(addr string) bool {
-    ok := clients[addr]
+func IsConnected(hash string) bool {
+    ok := clients[hash]
     
     if ok != nil {
         return true
@@ -130,8 +129,8 @@ func IsConnected(addr string) bool {
 /*
  * Diconnect client
  */
-func Disconnect(addr string) {
-    cmd := clients[addr]
+func Disconnect(hash string) {
+    cmd := clients[hash]
 
     if cmd != nil {
         err := cmd.Process.Kill()

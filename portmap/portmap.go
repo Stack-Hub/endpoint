@@ -83,11 +83,16 @@ func (m *Portmap) read(data *format) bool {
         return false
     }
     
+    // Init empty map
+    if data.M == nil {
+        data.M = make(map [string]string, 1)
+    }
+    
     log.Debug("Read: ", string(bytes))
     
     if m.chkLeader {
         // Select Leader based on flag.
-        m.selLeader(data)        
+        m.sel(data)        
     }
     
     return true
@@ -132,7 +137,7 @@ func (m * Portmap) write(data *format) bool {
 /*
  *  If this is first reader then mark it as leader, and disallow others
  */
-func (m *Portmap) selLeader(data *format) {
+func (m *Portmap) sel(data *format) {
     // Set map leader
     m.isLeader = !utils.Itob(data.L)
 
@@ -149,7 +154,7 @@ func (m *Portmap) selLeader(data *format) {
 /*
  *  Reload file content and generate events to the client.
  */
-func (m *Portmap) deselLeader(data *format) {
+func (m *Portmap) desel(data *format) {
     // Save to diallow others to become leader
     if m.isLeader {
         // Allow other to become leader.
@@ -246,7 +251,7 @@ func New(name string, chkleader bool) (*Portmap, map[string]string, chan *Event)
     if !ok {
         return nil, nil, nil
     }
-        
+    
     // Setup file watch
     err := m.watch()
     if err != nil {
@@ -265,7 +270,7 @@ func (m *Portmap) Close() {
 	m.watcher.Close()    
     
     if m.chkLeader {
-        m.deselLeader(&m.portmap)
+        m.desel(&m.portmap)
     }
 }
 

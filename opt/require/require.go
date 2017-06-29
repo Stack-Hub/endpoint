@@ -54,8 +54,7 @@ func forEach(opts []string, cb parsecb) {
 
 /*
  * parse --require option
- * Formats rhost:rport@lhost:?      - random port mapping (first port maps to same as source port) 
- *         rhost:rport@lhost:>?     - load balance rport to random port (default is first port)
+ * Formats rhost:rport@lhost:?      - random port mapping 
  *         rhost:rport@lhost:>lport - load balance rport to lport
  */
 func parse(str string) (string, string, string, string, string) {

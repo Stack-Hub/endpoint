@@ -82,35 +82,35 @@ func ulimit(num uint64){
  * Usecases: 
 
  * For connecting stateless service
- * trafficrouter --register --stateless app:80@lb
- * trafficrouter --require  --stateless app:80@localhost
+ * trafficrouter --register app:80@lb
+ * trafficrouter --require  app:80@localhost>80
 
  * For connecing stateful service
- * trafficrouter --register --stateful mysql:80@app
- * trafficrouter --require  --stateful mysql:80@localhost --on-connect MYSQL=$DIP:$DPORT service restart app
+ * trafficrouter --register mysql:80@app
+ * trafficrouter --require  mysql:80@localhost --on-connect 'MYSQL=$DIP:$DPORT service restart app'
 
  * For connecing service to itself
- * trafficrouter --register --stateful nodes:*@nodes
- * trafficrouter --require  --stateful nodes:*@localhost
+ * trafficrouter --register nodes:*@nodes
+ * trafficrouter --require  nodes:*@localhost --on-connect 'NODESTRING=$NODESTRING:$DIP:$DPORT service restart mysql'
 
  * For stateful cluster (ex: mysql)
- * trafficrouter --register  --stateful manager:1186@nodes
- * trafficrouter --require  --stateful manager:1186@localhost
+ * trafficrouter --register  manager:1186@nodes
+ * trafficrouter --require   manager:1186@localhost
 
- * trafficrouter --register --stateful manager:1186@mysql
- * trafficrouter --require  --stateful manager:1186@localhost
+ * trafficrouter --register  manager:1186@mysql
+ * trafficrouter --require   manager:1186@localhost
 
- * trafficrouter --register --stateful nodes:*@manager
- * trafficrouter --require  --stateful nodes:*@localhost
+ * trafficrouter --register  nodes:*@manager
+ * trafficrouter --require   nodes:*@localhost
 
- * trafficrouter --register --stateful nodes:*@nodes
- * trafficrouter --require  --stateful nodes:*@localhost
+ * trafficrouter --register  nodes:*@nodes
+ * trafficrouter --require   nodes:*@localhost
 
- * trafficrouter --register --stateful nodes:*@mysql
- * trafficrouter --require  --stateful nodes:*@localhost
+ * trafficrouter --register  nodes:*@mysql
+ * trafficrouter --require   nodes:*@localhost
 
- * trafficrouter --register --stateful nodes:*@backup
- * trafficrouter --require  --stateful nodes:*@localhost
+ * trafficrouter --register  nodes:*@backup
+ * trafficrouter --require   nodes:*@localhost
 
  */
 func main() {
@@ -171,6 +171,14 @@ func main() {
 			Name:  "interval, i",
             Usage: "Interval to detect new hosts, used with --register for wildcard option",
 			Value: 10,
+		},	
+        cli.StringFlag{
+			Name:  "on-connect, oc",
+			Usage: "execute command on service connect",
+		},	
+        cli.StringFlag{
+			Name:  "on-disconnect, od",
+			Usage: "execute command on service disconnect",
 		},	
     }
     
