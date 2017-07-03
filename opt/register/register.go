@@ -37,7 +37,6 @@ type reg struct {
     rport string               //remote port to map to
     user string                //remote username
     reader *portmap.Portmap    //portmap handle
-    pmap   map[string]string   //portmap
     events chan *portmap.Event //portmap event channel
 }
 
@@ -65,7 +64,7 @@ func parse(str string) (string, string, string) {
 /*
  *  -regiser options iterater
  */
-func forEach(opts []string, cbStar parsecb, cbPort parsecb) {
+func forEach(opts []string, cb parsecb) {
     for _, opt := range opts {
 
         r := reg{opt: opt}
@@ -83,21 +82,17 @@ func forEach(opts []string, cbStar parsecb, cbPort parsecb) {
                   "ruser=", r.user)
         
         // For all port if map file contains entry then connect to mapped ports and wait for new ones.
-        r.reader, r.pmap, r.events = portmap.New(r.user, true)            
-        log.Debug("mapReader=", r.reader, " pmap", r.pmap, " event chan =", r.events)
+        r.reader, r.events = portmap.New(r.user, true)            
+        log.Debug("mapReader=", r.reader, " event chan =", r.events)
 
-        if r.lport == "*" {
-            cbStar(&r)
-        } else {
-            cbPort(&r)
-        }
+        cb(&r)
     }
 }
 
 /*
  *  Connect internal to remote host and periodically check the state.
  */
-func connect(r *reg, passwd string, interval int, debug bool) {
+func connect(r reg, passwd string, interval int, debug bool) {
 
     // Channel to notify when to stop this go routine
     done := make(chan bool)
@@ -148,16 +143,6 @@ func connect(r *reg, passwd string, interval int, debug bool) {
             // Use the same port for rest of the connections.
             if !ssh.IsConnected(hash) {
                 fmt.Println("Connecting...", hash)
-
-                // Get remote port mapping
-                r.rport = r.pmap[r.lport]
-
-                // Use dynamic port mapping if rport is empty
-                if r.rport == "" {
-                    r.rport = "0"
-                }
-                log.Debug("rport=", r.rport)
-
                 mappedRport := ssh.Connect(r.user, passwd, ip, r.lport, r.rport, hash, debug)
                 log.Debug("mappedPort=", mappedRport)
                 
@@ -166,7 +151,6 @@ func connect(r *reg, passwd string, interval int, debug bool) {
                     r.reader.Add(r.lport, mappedRport)
                     r.rport = mappedRport
                 }
-                
             }            
         }
 
@@ -178,13 +162,13 @@ func connect(r *reg, passwd string, interval int, debug bool) {
 /*
  *  Connect/Disconnect changes based on portmap
  */
-func procEvents(r *reg, passwd string, interval int, debug bool) {
+func eventloop(r *reg, passwd string, interval int, debug bool) {
     for {
         event := <-r.events
         if event.Type == portmap.ADDED {
             r.lport = event.Lport
             r.rport = event.Rport
-            go connect(r, passwd, interval, debug)
+            go connect(*r, passwd, interval, debug)
         } else if event.Type == portmap.DELETED {
             // Disconnect all connections for LPORT by closing goroutine channel.
             close(goroutines[event.Lport])
@@ -193,24 +177,6 @@ func procEvents(r *reg, passwd string, interval int, debug bool) {
     }    
 }
 
-/*
- *  Check if this instance of trafficrouter should initiate the connection.
- */
-func isAllowed(r *reg) bool {
-    // Allow all connections to leader (aka first instance)
-    // if not leader then only mapped ports are allowed
-    if r.reader.IsLeader() {
-        return true
-    } else {
-        if rport, ok := r.pmap[r.lport]; ok {
-            if rport != "0" && rport != ""  {
-                return true
-            }
-        } 
-    }
-    
-    return false
-}
 
 /*
  *  Process --regiser options
@@ -218,28 +184,12 @@ func isAllowed(r *reg) bool {
 func Process(passwd string, opts []string, count int, interval int, debug bool) {
     log.Debug(opts)
     
-    // For all port, connect to mapped ports then wait for new ports
-    connectAll := func(r *reg) {    
-        for k, _ := range r.pmap {
-            r.lport = k
-            if isAllowed(r) {
-                go connect(r, passwd, interval, debug)
-            }                    
+    // Start event loop for each option
+    forEach(opts, func(r *reg) {    
+        go eventloop(r, passwd, interval, debug)
+        
+        if r.lport != "*" {
+            r.reader.Add(r.lport, "0")
         }
-        // Wait for other ports 
-        go procEvents(r, passwd, interval, debug)
-    }
-    
-    // For single port, if this instance is first one then connect,
-    // else wait for first instance to provide mapped port
-    connectOne := func (r *reg) {
-        if isAllowed(r) {
-            go connect(r, passwd, interval, debug)
-        } else {
-            // Wait for leader to provide mapped port 
-            go procEvents(r, passwd, interval, debug)
-        }        
-    } 
-    
-    forEach(opts, connectAll, connectOne)      
+    })      
 }

@@ -18,10 +18,12 @@ import (
     "io/ioutil"
     "encoding/json"
     "os"
+    "io"
     
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/howeyc/fsnotify"
     log "github.com/Sirupsen/logrus"
+    "github.com/dchest/safefile"
 )
 
 const (
@@ -44,13 +46,13 @@ type format struct {
  *  Map struct for port mapping 
  */
 type Portmap struct {
-    portmap   format 
-    filename  string
-    watcher   *fsnotify.Watcher
-    event     chan *Event
-    isLeader  bool
-    chkLeader bool
-    file      *os.File
+    portmap       format 
+    filename      string
+    watcher       *fsnotify.Watcher
+    event         chan *Event
+    isLeader      bool
+    joinLeaderGrp bool
+    file          *os.File
 }
 
 /*
@@ -73,7 +75,7 @@ func (m *Portmap) read(data *format) bool {
         return false
     }
     
-    // Clear out old map by creating new one
+    // Clear out old map 
     data.M = nil
     
     // Parse content
@@ -90,7 +92,7 @@ func (m *Portmap) read(data *format) bool {
     
     log.Debug("Read: ", string(bytes))
     
-    if m.chkLeader {
+    if m.joinLeaderGrp {
         // Select Leader based on flag.
         m.sel(data)        
     }
@@ -103,18 +105,15 @@ func (m *Portmap) read(data *format) bool {
  *  Write port map file
  */
 func (m * Portmap) write(data *format) bool {
-        
-    if m.file == nil {
-        // Get exclusive lock on file to avoid corruption.
-        m.file = utils.LockFile(m.filename, true)             
 
-        defer func() {
-            // Release file lock
-            utils.UnlockFile(m.file) 
-            m.file = nil
-        }()
-    }
-
+    f, err := safefile.Create(m.filename, 0644)
+    if err != nil {
+        fmt.Println("Error opening file for writing ", err)
+        return false
+    } 
+    
+    defer f.Close()
+    
     // encode content
     jsonp, err := json.Marshal(data)
     if err != nil {
@@ -124,13 +123,18 @@ func (m * Portmap) write(data *format) bool {
     
     log.Debug("portmap = ", string(jsonp))
     
-    //TODO: Add write count check
-    _, err = m.file.Write(jsonp)
+    _, err = io.WriteString(f, string(jsonp))    
     if err != nil {
-        fmt.Println("Error writing file")
+        fmt.Println("Error writing file ", err)
         return false
-    }   
-    
+    } 
+
+    err = f.Commit()
+    if err != nil {
+        fmt.Println("Error commiting file ", err)
+        return false
+    } 
+        
     return true
 }
 
@@ -138,13 +142,19 @@ func (m * Portmap) write(data *format) bool {
  *  If this is first reader then mark it as leader, and disallow others
  */
 func (m *Portmap) sel(data *format) {
+
+    // If current instance is already a leader, skip selection process
+    if m.isLeader {
+        return
+    }
+
     // Set map leader
     m.isLeader = !utils.Itob(data.L)
 
     // Save to diallow others to become leader
     if m.isLeader {
         // Disallow other to become leader.
-        m.portmap.L = 1
+        data.L = 1
 
         // Save updated map
         m.write(data)
@@ -165,41 +175,56 @@ func (m *Portmap) desel(data *format) {
     }
 }
 
+func (m *Portmap) dispatch(ev int, k string, v string) {
+    log.Debug("Dispatching ", ev," event for ", k, ":", v)
+    m.event <- &Event{Lport: k, Rport: v, Type: ADDED}    
+}
+
 /*
  *  Reload file content and generate events to the client.
  */
-func (m *Portmap) update() {
-
-    var tempmap format 
+func (m *Portmap) update(data *format) {
     
     if m.file == nil {        
         
-        // Reload file
-        ok := m.read(&tempmap)
-        if !ok {
-            return
+        // For changed entries in temp map generate ADDED event for non leader instance
+        for k, v := range data.M {
+            log.Debug("Checking ", k, ":", v, " for ADDED event for non leader")
+            if old_v, ok := m.portmap.M[k]; ok {
+                
+                // If this is non leader and value is mapped port then genrate ADDED evnt
+                if old_v == "0" && v != "0" && !m.IsLeader() {
+                    m.dispatch(ADDED, k, v)
+                }                
+            }
         }
-
+    
+        
         // For new entries in temp map generate ADDED event
-        for k, v := range tempmap.M {
-            log.Debug("Checking ", k, ":", v, "for ADDED event")
+        for k, v := range data.M {
+            log.Debug("Checking ", k, ":", v, " for ADDED event for leader")
             if _, ok := m.portmap.M[k]; !ok {
-                log.Debug("Dispatching ADDED event for ", k, ":", v)
-                m.event <- &Event{Lport: k, Rport: v, Type: ADDED}
+                
+                // Skip disptaching if rport is 0 and this instance is not a leader.
+                if v == "0" && !m.IsLeader() {
+                    log.Debug("Skipping v=", v, " m.IsLeader()=", m.IsLeader())
+                    continue
+                }
+
+                m.dispatch(ADDED, k, v)
             }
         }
 
         // For missing entries from port map generate DELETED event
         for k, v := range m.portmap.M {
-            log.Debug("Checking ", k, ":", v, "for DELETED event")
-            if _, ok := tempmap.M[k]; !ok {
-                log.Debug("Dispatching DELETED event for ", k, ":", v)
-                m.event <- &Event{Lport: k, Rport: v, Type: DELETED}
+            log.Debug("Checking ", k, ":", v, " for DELETED event")
+            if _, ok := data.M[k]; !ok {
+                m.dispatch(DELETED, k, v)
             }
         }
 
         // Update portmap to new loaded map.
-        m.portmap = tempmap
+        m.portmap = *data
     }    
 }
 
@@ -222,7 +247,18 @@ func (m *Portmap) watch() error {
 			select {
             case ev := <-m.watcher.Event:
                 log.Println("Recieved watcher event ", ev)
-                m.update()
+
+                var tempmap format
+
+                // Read file
+                ok := m.read(&tempmap)
+                if !ok {
+                    log.Error("Unable to read map file")
+                    return
+                }
+
+                m.update(&tempmap)
+                
 			case err := <-m.watcher.Error:
 				log.Println("Watcher error:", err)
 			}
@@ -236,30 +272,35 @@ func (m *Portmap) watch() error {
 /*
  *  New portmap
  */
-func New(name string, chkleader bool) (*Portmap, map[string]string, chan *Event) {
+func New(name string, joinLeaderGrp bool) (*Portmap, chan *Event) {
     
     m := Portmap{filename: utils.RUNPATH + name, 
-                 chkLeader: chkleader}
+                 joinLeaderGrp: joinLeaderGrp}
 
     // initilize members
     m.event = make(chan *Event, 10)
     
     log.Debug("m.filename=", m.filename)
     
+    var tempmap format
+    
     // Read file
-    ok := m.read(&m.portmap)
+    ok := m.read(&tempmap)
     if !ok {
-        return nil, nil, nil
+        return nil, nil
     }
+    
+    // Generate events and update map
+    m.update(&tempmap)
     
     // Setup file watch
     err := m.watch()
     if err != nil {
         log.Error("Unable to start file watcher", err)
-        return nil, nil, nil
+        return nil, nil
     }
     
-    return &m, m.portmap.M, m.event
+    return &m, m.event
 }
 
 /*
@@ -269,7 +310,7 @@ func (m *Portmap) Close() {
     /* Stop watching */
 	m.watcher.Close()    
     
-    if m.chkLeader {
+    if m.joinLeaderGrp {
         m.desel(&m.portmap)
     }
 }
@@ -285,7 +326,21 @@ func (m *Portmap) IsLeader() bool {
  *  Add port mapping
  */
 func (m *Portmap) Add(lport string, rport string) {
-    m.portmap.M[lport] = rport
-    log.Debug("m.portmap", m.portmap)
-    m.write(&m.portmap)    
+
+    // Only Leader can add port mappings
+    if m.isLeader {
+        // Add port mapping if no entry exists or entry exists but mapping is "0"
+        if mappedPort, ok := m.portmap.M[lport]; !ok || (ok && mappedPort == "0") {
+
+            // Add map and update store file.
+            m.portmap.M[lport] = rport
+            log.Debug("ADD(): m.portmap", m.portmap)
+            m.write(&m.portmap)        
+
+            // Dispatch event only for new entry
+            if !ok {
+                m.dispatch(ADDED, lport, rport)
+            }            
+        } 
+    }
 }
