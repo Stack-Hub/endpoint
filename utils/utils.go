@@ -25,6 +25,9 @@ import (
  *  Default configurations
  */
 const (
+    LOCK_SH     = syscall.LOCK_SH
+    LOCK_EX     = syscall.LOCK_EX
+    LOCK_NB     = syscall.LOCK_NB
     RUNPATH     = "/tmp/"
     SSHD_CONFIG = "/etc/ssh/sshd_config" 
     MATCHBLK    = `
@@ -92,7 +95,7 @@ func Itob(b int) bool {
 /*
  * Lock file
  */
-func LockFile(filename string, truncate bool) *os.File {
+func LockFile(filename string, truncate bool, how int) (*os.File, error) {
 
     mode := os.O_RDWR|os.O_CREATE
     
@@ -104,10 +107,13 @@ func LockFile(filename string, truncate bool) *os.File {
     Check(err)
     
     fd := f.Fd()
-	err = unix.Flock(int(fd), syscall.LOCK_EX)
-    Check(err)
+	err = unix.Flock(int(fd), how)
+    if err != nil {
+        f.Close()
+        return nil, err
+    }
     
-    return f
+    return f, nil
 }
 
 /*

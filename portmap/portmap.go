@@ -18,12 +18,11 @@ import (
     "io/ioutil"
     "encoding/json"
     "os"
-    "io"
+    "time"
     
     "github.com/duppercloud/trafficrouter/utils"
-    "github.com/howeyc/fsnotify"
+    "github.com/fsnotify/fsnotify"
     log "github.com/Sirupsen/logrus"
-    "github.com/dchest/safefile"
 )
 
 const (
@@ -39,7 +38,6 @@ type Event struct {
 
 type format struct {
     M map[string]string `json:"list"`
-    L int               `json:"leader"`
 }
 
 /*
@@ -47,11 +45,11 @@ type format struct {
  */
 type Portmap struct {
     portmap       format 
-    filename      string
+    mapfile       string
+    leaderfile    string
     watcher       *fsnotify.Watcher
     event         chan *Event
     isLeader      bool
-    joinLeaderGrp bool
     file          *os.File
 }
 
@@ -59,8 +57,9 @@ type Portmap struct {
  *  Reload file content and generate events to the client.
  */
 func (m *Portmap) read(data *format) bool {
+        
     // Get exclusive lock on file to avoid corruption.
-    m.file = utils.LockFile(m.filename, false)     
+    m.file, _ = utils.LockFile(m.mapfile, false, utils.LOCK_SH)     
 
     // Release file lock
     defer func() {
@@ -90,13 +89,8 @@ func (m *Portmap) read(data *format) bool {
         data.M = make(map [string]string, 1)
     }
     
-    log.Debug("Read: ", string(bytes))
-    
-    if m.joinLeaderGrp {
-        // Select Leader based on flag.
-        m.sel(data)        
-    }
-    
+    log.Debug("Read(): ", string(bytes))
+        
     return true
 }
 
@@ -106,13 +100,14 @@ func (m *Portmap) read(data *format) bool {
  */
 func (m * Portmap) write(data *format) bool {
 
-    f, err := safefile.Create(m.filename, 0644)
-    if err != nil {
-        fmt.Println("Error opening file for writing ", err)
-        return false
-    } 
-    
-    defer f.Close()
+    // Get exclusive lock on file to avoid corruption.
+    m.file, _ = utils.LockFile(m.mapfile, false, utils.LOCK_SH)     
+
+    // Release file lock
+    defer func() {
+        utils.UnlockFile(m.file)
+        m.file = nil
+    }()
     
     // encode content
     jsonp, err := json.Marshal(data)
@@ -123,56 +118,13 @@ func (m * Portmap) write(data *format) bool {
     
     log.Debug("portmap = ", string(jsonp))
     
-    _, err = io.WriteString(f, string(jsonp))    
+    _, err = m.file.Write(jsonp)
     if err != nil {
         fmt.Println("Error writing file ", err)
         return false
     } 
 
-    err = f.Commit()
-    if err != nil {
-        fmt.Println("Error commiting file ", err)
-        return false
-    } 
-        
     return true
-}
-
-/*
- *  If this is first reader then mark it as leader, and disallow others
- */
-func (m *Portmap) sel(data *format) {
-
-    // If current instance is already a leader, skip selection process
-    if m.isLeader {
-        return
-    }
-
-    // Set map leader
-    m.isLeader = !utils.Itob(data.L)
-
-    // Save to diallow others to become leader
-    if m.isLeader {
-        // Disallow other to become leader.
-        data.L = 1
-
-        // Save updated map
-        m.write(data)
-    }
-}
-
-/*
- *  Reload file content and generate events to the client.
- */
-func (m *Portmap) desel(data *format) {
-    // Save to diallow others to become leader
-    if m.isLeader {
-        // Allow other to become leader.
-        data.L = 0
-
-        // Save updated map
-        m.write(data)
-    }
 }
 
 func (m *Portmap) dispatch(ev int, k string, v string) {
@@ -228,6 +180,23 @@ func (m *Portmap) update(data *format) {
     }    
 }
 
+
+/*
+ *  Watch event handler
+ */
+func (m *Portmap) handleEvent() {
+    var tempmap format
+
+    // Read file
+    ok := m.read(&tempmap)
+    if !ok {
+        log.Error("Unable to read map file")
+        return
+    }
+
+    m.update(&tempmap)
+}
+
 /*
  *  Implements fsnotify file system watcher
  */
@@ -245,43 +214,83 @@ func (m *Portmap) watch() error {
 	go func() {
 		for {
 			select {
-            case ev := <-m.watcher.Event:
+            case ev := <-m.watcher.Events:
                 log.Println("Recieved watcher event ", ev)
-
-                var tempmap format
-
-                // Read file
-                ok := m.read(&tempmap)
-                if !ok {
-                    log.Error("Unable to read map file")
-                    return
-                }
-
-                m.update(&tempmap)
+                m.handleEvent()
                 
-			case err := <-m.watcher.Error:
+			case err := <-m.watcher.Errors:
 				log.Println("Watcher error:", err)
 			}
 		}
 	}()
 
     // Start watcher
-	return m.watcher.WatchFlags(m.filename, fsnotify.FSN_CREATE | fsnotify.FSN_MODIFY | fsnotify.FSN_DELETE)
+	return m.watcher.Add(m.mapfile)
+}
+
+
+/*
+ *  Compete for leadership by obtaining exclusive lock on leader file.
+ */
+func (m *Portmap) electLeader() {
+
+    // Setup timeout channel for electLeader contest
+    timeout := make(chan bool, 1)
+    go func() {
+        time.Sleep(100 * time.Millisecond)
+        timeout <- true
+    }()
+
+    // Setup locked channel to indicate if lock is acquired
+    locked := make(chan bool, 1)
+    go func() {
+        for {
+            _, err := utils.LockFile(m.leaderfile, true, utils.LOCK_EX | utils.LOCK_NB)
+            if err == nil {
+                log.Debug("elecLeader(): Leadership Acquired")
+                // Set map leader
+                m.isLeader = true
+                locked <- true
+            } 
+        
+            // Throttle lock retries
+            time.Sleep(10 * time.Millisecond)
+        }
+    }()
+
+    select {    
+        // Try to acquire exclusive lock on leader file.
+        case <-locked:
+            return
+        case <-timeout: 
+            log.Debug("Election over, candidate defeated")
+            return
+    }        
+    
+    /* Don't unlock, because that will make other process leader as well.
+     * Only when this process is killed the lock will be released and 
+     * other processes will get a chance to become leader.
+     */
 }
 
 /*
  *  New portmap
  */
-func New(name string, joinLeaderGrp bool) (*Portmap, chan *Event) {
+func New(name string, electLeader bool) (*Portmap, chan *Event) {
     
-    m := Portmap{filename: utils.RUNPATH + name, 
-                 joinLeaderGrp: joinLeaderGrp}
+    m := Portmap{mapfile: utils.RUNPATH + name + ".map",
+                 leaderfile: utils.RUNPATH + name + ".leader"}
 
     // initilize members
     m.event = make(chan *Event, 10)
     
-    log.Debug("m.filename=", m.filename)
-    
+    log.Debug("m.mapfile=", m.mapfile)
+        
+    if electLeader {
+        // Select Leader based on flag.
+        m.electLeader()
+    }
+
     var tempmap format
     
     // Read file
@@ -309,10 +318,6 @@ func New(name string, joinLeaderGrp bool) (*Portmap, chan *Event) {
 func (m *Portmap) Close() {
     /* Stop watching */
 	m.watcher.Close()    
-    
-    if m.joinLeaderGrp {
-        m.desel(&m.portmap)
-    }
 }
 
 /*

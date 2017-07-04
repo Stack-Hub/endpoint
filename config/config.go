@@ -128,7 +128,7 @@ func Send() {
 
     // Flock on pid file
     ppidstr := strconv.Itoa(ppid)
-    fptr = utils.LockFile(utils.RUNPATH + ppidstr, false)
+    fptr, _ = utils.LockFile(utils.RUNPATH + ppidstr, false, utils.LOCK_EX)
     
     //Host to store connection information
     var h utils.Host
