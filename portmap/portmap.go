@@ -18,7 +18,6 @@ import (
     "io/ioutil"
     "encoding/json"
     "os"
-    "time"
     
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/fsnotify/fsnotify"
@@ -51,6 +50,159 @@ type Portmap struct {
     event         chan *Event
     isLeader      bool
     file          *os.File
+}
+
+/*
+ *  Check if this reader is the leader
+ */
+func (m *Portmap) IsLeader() bool {
+    return m.isLeader
+}
+
+/*
+ *  Compete for leadership by obtaining exclusive lock on leader file.
+ */
+func (m *Portmap) electLeader(blocking bool) bool {
+
+    // Retry acquiring lock
+    log.Debug("electLeader(): retrying")
+
+    // Check if election is over?
+    // Set mode flags to either blocking or non-blocking
+    mode := utils.LOCK_EX 
+    
+    if !blocking {
+        mode |= utils.LOCK_NB
+    }
+
+    // Acquire lock on leader file
+    _, err := utils.LockFile(m.leaderfile, true, mode)
+    if err == nil {
+        log.Debug("elecLeader(): Leadership Acquired")
+        return true
+    } 
+
+    return false
+        
+    /* Don't unlock, because that will make other process leader as well.
+     * Only when this process is killed the lock will be released and 
+     * other processes will get a chance to become leader.
+     */
+}
+
+/*
+ *  New portmap
+ */
+func New(name string, electLeader bool) (*Portmap, chan *Event) {
+    
+    m := Portmap{mapfile: utils.RUNPATH + name + ".map",
+                 leaderfile: utils.RUNPATH + name + ".leader"}
+
+    // initilize members
+    m.event = make(chan *Event, 10)
+    
+    log.Debug("m.mapfile=", m.mapfile)
+        
+    // Elect leader by acquiring lock on leader file
+    // if failed then start async blocking call 
+    if electLeader {
+        m.isLeader = m.electLeader(false)
+        if !m.isLeader {
+            go func() {
+                m.isLeader = m.electLeader(true)
+            }()
+        }
+    }
+
+    var tempmap format
+    
+    // Read file
+    ok := m.read(&tempmap)
+    if !ok {
+        return nil, nil
+    }
+    
+    // Generate events and update map
+    m.update(&tempmap)
+    
+    // Setup file watch
+    err := m.watch()
+    if err != nil {
+        log.Error("Unable to start file watcher", err)
+        return nil, nil
+    }
+    
+    return &m, m.event
+}
+
+/*
+ *  Add port mapping
+ */
+func (m *Portmap) Add(lport string, rport string) {
+
+    // Only Leader can add port mappings
+    if m.isLeader {
+        // Add port mapping if no entry exists or entry exists but mapping is "0"
+        if mappedPort, ok := m.portmap.M[lport]; !ok || (ok && mappedPort == "0") {
+
+            // Add map and update store file.
+            m.portmap.M[lport] = rport
+            log.Debug("ADD(): m.portmap", m.portmap)
+            m.write(&m.portmap)        
+
+            // Dispatch event only for new entry
+            if !ok {
+                m.dispatch(ADDED, lport, rport)
+            }            
+        } 
+    }
+}
+
+/*
+ *  Watch event handler
+ */
+func (m *Portmap) handleEvent() {
+    var tempmap format
+
+    // Read file
+    ok := m.read(&tempmap)
+    if !ok {
+        log.Error("Unable to read map file")
+        return
+    }
+
+    m.update(&tempmap)
+}
+
+/*
+ *  Implements fsnotify file system watcher
+ */
+func (m *Portmap) watch() error {
+
+    // Get watcher for the file events
+    var err error
+    m.watcher, err = fsnotify.NewWatcher()
+    if err != nil {
+        fmt.Printf("File watch error: %v\n", err)
+        return err
+	}
+    
+	// On events reload file and send events to the client.
+	go func() {
+		for {
+            select {
+            case ev := <-m.watcher.Events:
+                log.Println("Recieved watcher event ", ev)
+                m.handleEvent()
+                
+			case err := <-m.watcher.Errors:
+				log.Println("Watcher error:", err)
+			}
+		}
+	}()
+
+    // Start watcher
+	return m.watcher.Add(m.mapfile)
 }
 
 /*
@@ -180,138 +332,6 @@ func (m *Portmap) update(data *format) {
     }    
 }
 
-
-/*
- *  Watch event handler
- */
-func (m *Portmap) handleEvent() {
-    var tempmap format
-
-    // Read file
-    ok := m.read(&tempmap)
-    if !ok {
-        log.Error("Unable to read map file")
-        return
-    }
-
-    m.update(&tempmap)
-}
-
-/*
- *  Implements fsnotify file system watcher
- */
-func (m *Portmap) watch() error {
-
-    // Get watcher for the file events
-    var err error
-    m.watcher, err = fsnotify.NewWatcher()
-    if err != nil {
-        fmt.Printf("File watch error: %v\n", err)
-        return err
-	}
-    
-	// On events reload file and send events to the client.
-	go func() {
-		for {
-			select {
-            case ev := <-m.watcher.Events:
-                log.Println("Recieved watcher event ", ev)
-                m.handleEvent()
-                
-			case err := <-m.watcher.Errors:
-				log.Println("Watcher error:", err)
-			}
-		}
-	}()
-
-    // Start watcher
-	return m.watcher.Add(m.mapfile)
-}
-
-
-/*
- *  Compete for leadership by obtaining exclusive lock on leader file.
- */
-func (m *Portmap) electLeader() {
-
-    // Setup timeout channel for electLeader contest
-    timeout := make(chan bool, 1)
-    go func() {
-        time.Sleep(100 * time.Millisecond)
-        timeout <- true
-    }()
-
-    // Setup locked channel to indicate if lock is acquired
-    locked := make(chan bool, 1)
-    go func() {
-        for {
-            _, err := utils.LockFile(m.leaderfile, true, utils.LOCK_EX | utils.LOCK_NB)
-            if err == nil {
-                log.Debug("elecLeader(): Leadership Acquired")
-                // Set map leader
-                m.isLeader = true
-                locked <- true
-            } 
-        
-            // Throttle lock retries
-            time.Sleep(10 * time.Millisecond)
-        }
-    }()
-
-    select {    
-        // Try to acquire exclusive lock on leader file.
-        case <-locked:
-            return
-        case <-timeout: 
-            log.Debug("Election over, candidate defeated")
-            return
-    }        
-    
-    /* Don't unlock, because that will make other process leader as well.
-     * Only when this process is killed the lock will be released and 
-     * other processes will get a chance to become leader.
-     */
-}
-
-/*
- *  New portmap
- */
-func New(name string, electLeader bool) (*Portmap, chan *Event) {
-    
-    m := Portmap{mapfile: utils.RUNPATH + name + ".map",
-                 leaderfile: utils.RUNPATH + name + ".leader"}
-
-    // initilize members
-    m.event = make(chan *Event, 10)
-    
-    log.Debug("m.mapfile=", m.mapfile)
-        
-    if electLeader {
-        // Select Leader based on flag.
-        m.electLeader()
-    }
-
-    var tempmap format
-    
-    // Read file
-    ok := m.read(&tempmap)
-    if !ok {
-        return nil, nil
-    }
-    
-    // Generate events and update map
-    m.update(&tempmap)
-    
-    // Setup file watch
-    err := m.watch()
-    if err != nil {
-        log.Error("Unable to start file watcher", err)
-        return nil, nil
-    }
-    
-    return &m, m.event
-}
-
 /*
  *  Close and cleanup resources
  */
@@ -320,32 +340,3 @@ func (m *Portmap) Close() {
 	m.watcher.Close()    
 }
 
-/*
- *  Check if this reader is the leader
- */
-func (m *Portmap) IsLeader() bool {
-    return m.isLeader
-}
-
-/*
- *  Add port mapping
- */
-func (m *Portmap) Add(lport string, rport string) {
-
-    // Only Leader can add port mappings
-    if m.isLeader {
-        // Add port mapping if no entry exists or entry exists but mapping is "0"
-        if mappedPort, ok := m.portmap.M[lport]; !ok || (ok && mappedPort == "0") {
-
-            // Add map and update store file.
-            m.portmap.M[lport] = rport
-            log.Debug("ADD(): m.portmap", m.portmap)
-            m.write(&m.portmap)        
-
-            // Dispatch event only for new entry
-            if !ok {
-                m.dispatch(ADDED, lport, rport)
-            }            
-        } 
-    }
-}

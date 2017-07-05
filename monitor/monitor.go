@@ -16,7 +16,6 @@ package server
 import (
     "encoding/json"
     "os"
-    "os/exec"
     "strconv"
     "bytes"
     "io"
@@ -95,17 +94,16 @@ func removeConnection(m *omap.OMap, uname string, h *utils.Host, r ConnRemovedEv
  *  Wait for lock file to be released.
  */
 func waitForClose(p int) bool {
-    // Add user
-	cmd := "flock"
-    args := []string{utils.RUNPATH + strconv.Itoa(p), "-c", "echo done"}
+    // Blocking flock on pid file.
+    mode := utils.LOCK_EX
+    filename := utils.RUNPATH + strconv.Itoa(p)
     
-    _, err := exec.Command(cmd, args...).Output()
-    if err != nil {
-        return false
+    _, err := utils.LockFile(filename, true, mode)
+    if err == nil {
+        return true
     }
     
-    os.Remove(utils.RUNPATH + strconv.Itoa(p))
-    return true
+    return false
 }
 
 /*
