@@ -281,7 +281,7 @@ func (m * Portmap) write(data *format) bool {
 
 func (m *Portmap) dispatch(ev int, k string, v string) {
     log.Debug("Dispatching ", ev," event for ", k, ":", v)
-    m.event <- &Event{Lport: k, Rport: v, Type: ADDED}    
+    m.event <- &Event{Lport: k, Rport: v, Type: ev}    
 }
 
 /*
@@ -290,6 +290,17 @@ func (m *Portmap) dispatch(ev int, k string, v string) {
 func (m *Portmap) update(data *format) {
     
     if m.file == nil {        
+        
+        // For missing entries from port map generate DELETED event
+        // DELETE event takes precedance over ADDED because 
+        // if the new entry's rport maps to any new entry, then we should remove old entry first.
+        for k, v := range m.portmap.M {
+            log.Debug("Checking ", k, ":", v, " for DELETED event")
+            if _, ok := data.M[k]; !ok {
+                m.dispatch(DELETED, k, v)
+            }
+        }
+
         
         // For changed entries in temp map generate ADDED event for non leader instance
         for k, v := range data.M {
@@ -316,14 +327,6 @@ func (m *Portmap) update(data *format) {
                 }
 
                 m.dispatch(ADDED, k, v)
-            }
-        }
-
-        // For missing entries from port map generate DELETED event
-        for k, v := range m.portmap.M {
-            log.Debug("Checking ", k, ":", v, " for DELETED event")
-            if _, ok := data.M[k]; !ok {
-                m.dispatch(DELETED, k, v)
             }
         }
 

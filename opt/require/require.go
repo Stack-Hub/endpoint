@@ -28,7 +28,21 @@ import (
     log "github.com/Sirupsen/logrus"
 )
 
-type parsecb func(string, string, string, string, string, string)
+/*
+ *  opt struct
+ */
+type req struct {
+    opt   string               //option string
+    lhost string               //local hostname
+    lport string               //local port to connect
+    rhost string               //remote host to connect to
+    rport string               //remote port to map to
+    _type string               //dynamic or load balanced type
+    user  string               //username
+    lb    *net.Listener        //Listener socket for load balancer
+}
+
+type parsecb func(req)
 type callback func()
 
 var cbTicker int = 0
@@ -40,15 +54,24 @@ var asyncCB callback = nil
 func forEach(opts []string, cb parsecb) {
 
     for _, opt := range opts {
-        rhost, rport, lhost, _type, lport := parse(opt)
+        var r req
+        r.rhost, r.rport, r.lhost, r._type, r.lport = parse(opt)
 
-        log.Debug("raddr=", rhost, ",",
-                  "rport=", rport, ",",
-                  "laddr=", lhost, ",",
-                  "type=",  _type, ",",
-                  "lport=", lport)
         
-        cb(opt, rhost, rport, lhost, _type, lport)
+        r.user = r.rhost
+        log.Debug("r.user=", r.user)
+
+        if r.rport != "*" {
+            r.user += "." + r.rport
+        }
+        
+        log.Debug("raddr=", r.rhost, ",",
+                  "rport=", r.rport, ",",
+                  "laddr=", r.lhost, ",",
+                  "type=",  r._type, ",",
+                  "lport=", r.lport)
+        
+        cb(r)
     }
 }
 
@@ -165,8 +188,9 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     
     // TODO:Add condition for stateless 
     // If this is first connection start listening on load balanced port
-    if m.Len() == 1 {
-        m.Userdata = listen(m, strconv.Itoa(int(h.ListenPort)), strconv.Itoa(int(h.Config.Port)))
+    r := m.Userdata.(req)
+    if r._type[0] == '>' && m.Len() == 1 {
+        r.lb = listen(m, strconv.Itoa(int(h.ListenPort)), r.lport)
     }
     
     // All required connections are established
@@ -196,9 +220,10 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     
     // TODO:Add condition for stateless 
     // If this is last connection then close listener
-    if m.Len() == 0 {
-        m.Userdata.(net.Listener).Close()
-    }
+    //if m.Len() == 0 {
+    //    r := m.Userdata.(req)
+    //    r.lb.Close()
+    //}
     
 }
 
@@ -230,7 +255,7 @@ func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
 func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
             
-    forEach(opts, func(opt string, rhost string, rport string, lhost string, _type string, lport string) {
+    forEach(opts, func(r req) {
 
         //Store callback for later invocation
         if cb != nil {
@@ -238,25 +263,19 @@ func Process(passwd string, opts []string,  cb callback) {
             cb = nil            
         }
 
-        uname := rhost
-        log.Debug("uname=", uname)
-
-        if rport != "*" {
-            uname += "." + rport
-        }
-        
         //Create User
-        u := user.New(uname, passwd)
+        u := user.New(r.user, passwd)
         log.Debug("user=", u)
 
         // Initialize Ordered map and server events.
-        m := omap.New()
+        m := omap.New()   
+        m.Userdata = r
 
         // Increment callback ticker.
         cbTicker++
 
         // Monitor unix listening socker based on uname
-        go server.Monitor(m, uname, ConnAddEv, ConnRemoveEv)
+        go server.Monitor(m, r.user, ConnAddEv, ConnRemoveEv)
 
     })
 

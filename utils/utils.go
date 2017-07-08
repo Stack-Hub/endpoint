@@ -104,7 +104,9 @@ func LockFile(filename string, truncate bool, how int) (*os.File, error) {
     }
     
     f, err := os.OpenFile(filename, mode, 0666)
-    Check(err)
+    if err != nil {
+        return nil, err
+    }
     
     fd := f.Fd()
 	err = unix.Flock(int(fd), how)
@@ -119,10 +121,10 @@ func LockFile(filename string, truncate bool, how int) (*os.File, error) {
 /*
  * Unlock file to unblock server
  */
-func UnlockFile(f *os.File) {
+func UnlockFile(f *os.File) error {
     fd := f.Fd()
     err := unix.Flock(int(fd), syscall.LOCK_UN)
-    Check(err)
     f.Sync()
     f.Close()
+    return err
 }

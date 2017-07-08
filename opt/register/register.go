@@ -89,6 +89,8 @@ func forEach(opts []string, cb parsecb) {
     }
 }
 
+
+
 /*
  *  Connect internal to remote host and periodically check the state.
  */
@@ -101,21 +103,6 @@ func connect(r reg, passwd string, interval int, debug bool) {
     for {                      
         // Check if host exists
         ipArr, _ := net.LookupHost(r.rhost)
-        
-        // Diconnect all ssh connection if channel is closed and return.
-        select {
-            case _, ok := <- done:
-                if !ok {
-                    for _, ip := range ipArr {
-                        hash := r.lhost + "." + r.lport + "@" + ip
-                        ssh.Disconnect(hash)
-                    }
-                    return
-                }
-            default:
-            /* no-op */
-        }
-
         
         // Connect to all IP address for remote host
         for _, ip := range ipArr {
@@ -154,8 +141,21 @@ func connect(r reg, passwd string, interval int, debug bool) {
             }            
         }
 
-        // sleep between retry intervals
-        time.Sleep( time.Duration(interval) * 1000 * time.Millisecond)
+        // Diconnect all ssh connection if channel is closed and return.
+        select {
+            case _, ok := <- done:
+                log.Debug("Terminating goroutine")
+                if !ok {
+                    for _, ip := range ipArr {
+                        hash := r.lhost + "." + r.lport + "@" + ip
+                        ssh.Disconnect(hash)
+                    }
+                    return
+                }
+            case  <- time.After( time.Duration(interval) * 1000 * time.Millisecond):
+            /* no-op */
+        }
+
     }        
 }
 
