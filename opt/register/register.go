@@ -36,7 +36,7 @@ type reg struct {
     rhost string               //remote host to connect to
     rport string               //remote port to map to
     user string                //remote username
-    reader *portmap.Portmap    //portmap handle
+    pmap *portmap.Portmap    //portmap handle
     events chan *portmap.Event //portmap event channel
 }
 
@@ -51,14 +51,18 @@ type parsecb func(*reg)
 /*
  *  --regiser option parser logic
  */
-func parse(str string) (string, string, string) {
-    var expr = regexp.MustCompile(`^(.+):([0-9]+|\*)@([^:]+)$`)
+func parse(str string) (string, string, string, string) {
+    var expr = regexp.MustCompile(`^(.+):([0-9]+|\*)@([^:]+)(:([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
 	if len(str) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost\n", str)))
 	}
-        
-    return parts[1], parts[2], parts[3]
+    
+    if len(parts[5]) == 0 {
+        parts[5] = "0"
+    }
+    
+    return parts[1], parts[2], parts[3], parts[5]
 }
 
 /*
@@ -68,9 +72,13 @@ func forEach(opts []string, cb parsecb) {
     for _, opt := range opts {
 
         r := reg{opt: opt}
-        r.lhost, r.lport, r.rhost = parse(opt)
+        r.lhost, r.lport, r.rhost, r.rport = parse(opt)
 
         if r.lport == "*" {
+            if r.rport != "0" {
+                e := fmt.Sprintf("Invalid port specification [%s]. Can't map all(*) ports to single port %d.", r.opt, r.rport)
+                utils.Check(errors.New(e))
+            }
             r.user = r.lhost
         } else {
             r.user = r.lhost + "." + r.lport
@@ -79,11 +87,12 @@ func forEach(opts []string, cb parsecb) {
         log.Debug("laddr=", r.lhost, ",",
                   "lport=", r.lport, ",",
                   "rhost=", r.rhost, ",",
+                  "rport=", r.rport, ",",
                   "ruser=", r.user)
         
-        // For all port if map file contains entry then connect to mapped ports and wait for new ones.
-        r.reader, r.events = portmap.New(r.user, true)            
-        log.Debug("mapReader=", r.reader, " event chan =", r.events)
+        // Initliaze port map to get events of new port mappings.
+        r.pmap, r.events = portmap.New(r.user, true)            
+        log.Debug("mapReader=", r.pmap, " event chan =", r.events)
 
         cb(&r)
     }
@@ -135,8 +144,9 @@ func connect(r reg, passwd string, interval int, debug bool) {
                 
                 // Add this port mapping to portmap and save it.
                 if r.rport == "0" && mappedRport != "0" {
-                    r.reader.Add(r.lport, mappedRport)
                     r.rport = mappedRport
+                    r.pmap.Add(r.lport, r.rport)
+                    
                 }
             }            
         }
@@ -189,7 +199,7 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
         go eventloop(r, passwd, interval, debug)
         
         if r.lport != "*" {
-            r.reader.Add(r.lport, "0")
+            r.pmap.Add(r.lport, r.rport)
         }
     })      
 }
