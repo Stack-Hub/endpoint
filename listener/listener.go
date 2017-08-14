@@ -8,63 +8,23 @@ package main
 import (
     "C"
     "fmt"
+    "os"
     "syscall"
-    "encoding/json"
-    "io/ioutil"    
     "strconv"
 
+    "github.com/duppercloud/trafficrouter/portmap"
     "github.com/rainycape/dl"
 )
 
 // go build -buildmode=c-shared -o listener.so listener.go
 
-type ports struct {
-    m map[string]int `json:"list"`
-}
-
-var p ports
+// Initliaze port map to get events of new port mappings.
+var pmap, _ = portmap.New(os.Getenv("APPNAME"), false, true)
 
 func main() {}
 
-func load() *ports {
-    
-    var p ports
-    
-    file, e := ioutil.ReadFile("/tmp/ports")
-    if e != nil {
-        fmt.Printf("File error: %v\n", e)
-        return &p
-    }
-
-    json.Unmarshal(file, &p)
-    
-    if len(p.m) == 0 {
-        p.m = make(map[string]int, 1)
-    }
-    
-    return &p
-}
-
-func save(p *ports) {
-    
-    jsonp, err := json.Marshal(p.m)
-    if err != nil {
-        fmt.Println(err)
-    }
-    
-    fmt.Println(p)
-    fmt.Println(jsonp)
-
-    err = ioutil.WriteFile("/tmp/ports", jsonp, 0644)
-    if err != nil {
-        fmt.Println("listener.so: Error writing file")
-    }
-}
-
 //export listen
 func listen(fd C.int, backlog C.int) int32 {
-
-    p := load()
     
     lib, err := dl.Open("libc", 0)
     if err != nil {
@@ -83,14 +43,12 @@ func listen(fd C.int, backlog C.int) int32 {
     
     switch sock.(type) {
         case *syscall.SockaddrInet4:
-            f := strconv.Itoa(int(fd))
-            p.m[f] = sock.(*syscall.SockaddrInet4).Port
+            pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet4).Port), "0")
+            fmt.Println("Litening detected on port", strconv.Itoa(sock.(*syscall.SockaddrInet4).Port))
         case *syscall.SockaddrInet6:
-            f := strconv.Itoa(int(fd))
-            p.m[f] = sock.(*syscall.SockaddrInet6).Port
+            pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet6).Port), "0")
+            fmt.Println("Litening detected on ", strconv.Itoa(sock.(*syscall.SockaddrInet6).Port))
     }
-        
-    save(p)
 
     return reallisten(fd, backlog)
 }

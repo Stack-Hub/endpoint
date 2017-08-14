@@ -61,7 +61,7 @@ func (m *Portmap) electLeader(blocking bool) bool {
     }
 
     // Acquire lock on leader file
-    _, err := utils.LockFile(m.leaderfile, true, mode)
+    _, err := utils.LockFile(m.leaderfile, false, mode)
     if err == nil {
         log.Debug("elecLeader(): Leadership Acquired")
         return true
@@ -230,7 +230,7 @@ func (m *Portmap) update(data map[string]string) {
 func (m * Portmap) write(lport string, rport string) bool {
 
     // Get exclusive lock on file to avoid corruption.
-    file, _ := utils.LockFile(m.mapfile, true, utils.LOCK_SH)     
+    file, _ := utils.LockFile(m.mapfile, false, utils.LOCK_SH)     
 
     // Release file lock
     defer utils.UnlockFile(file)
@@ -269,6 +269,10 @@ func (m * Portmap) write(lport string, rport string) bool {
 
     log.Debug("write(): portmap = ", string(jsonp))
 
+    //Empty file first
+    file.Truncate(0)
+    file.Seek(0,0)
+    
     _, err = file.Write(jsonp)
     if err != nil {
         fmt.Println("write(): Error writing file ", err)
