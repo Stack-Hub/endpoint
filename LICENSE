@@ -1,201 +1,213 @@
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+TRAFFICROUTER NON-COMMERCIAL LICENSE AGREEMENT
 
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+BY CLICKING THE ACCEPT BUTTON OR DOWNLOADING THE SOFTWARE, 
+YOU AGREE TO BE BOUND BY AND BECOME A PARTY TO THIS AGREEMENT.  
+IF YOU DO NOT AGREE TO ALL OF THE TERMS OF THIS AGREEMENT, 
+YOU MUST CLICK THE BUTTON THAT INDICATES THAT YOU DO NOT 
+ACCEPT THE TERMS OF THIS AGREEMENT AND YOU MAY NOT DOWNLOAD, 
+INSTALL, OR USE TRAFFICROUTER SOFTWARE. 
 
-   1. Definitions.
+CAREFULLY READ THE FOLLOWING LEGAL AGREEMENT (“AGREEMENT”) 
+FOR THE LICENSE OF TRAFFICROUTER SOFTWARE YOU ARE ABOUT TO DOWNLOAD 
+OR INSTALL (THE “SOFTWARE”). “TRAFFICROUTER” MEANS TRAFFICROUTER SOFTWARE 
+DEVELOPED BY ASHISH THAKWANI, A PRIVATE PERSON.  “YOU” MEANS 
+THE INDIVIDUAL PERSON INSTALLING OR USING THE SOFTWARE ON HIS 
+OR HER OWN BEHALF; OR, IF THE SOFTWARE IS BEING DOWNLOADED OR 
+INSTALLED ON BEHALF OF AN ORGANIZATION, SUCH AS AN EMPLOYER,
+“YOU” MEANS THE ORGANIZATION FOR WHICH THE SOFTWARE IS 
+DOWNLOADED OR INSTALLED AND YOU REPRESENT THAT YOU HAVE 
+AUTHORIZED THE PERSON ACCEPTING THIS AGREEMENT TO DO SO ON 
+YOUR BEHALF.  THE SOFTWARE IS PROTECTED BY COPYRIGHTS AND/OR 
+PATENTS IN THE UNITED STATES AND OTHER COUNTRIES.  IF YOU 
+DOWNLOAD OR USE THE SOFTWARE IN WAYS NOT PERMITTED BY THIS 
+AGREEMENT, YOU WILL NOT ONLY BE IN BREACH OF THIS AGREEMENT, 
+YOU WILL ALSO BE INFRINGING TRAFFICROUTER PATENTS AND COPYRIGHTS.
 
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
+1.	Trafficrouter 
 
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
+1.1 Subject to the terms and conditions of this Agreement, 
+Trafficrouter grants to you a non-exclusive, non-sublicensable, 
+non-transferable, personal license to:	
 
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
+* Download the software and make a reasonable number of 
+copies on the devices you own or control as necessary to 
+exercise the rights granted below;
 
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
+* Internally use, perform, display and reproduce for your 
+own personal, noncommercial use.
 
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
+1.2 You may distribute the Software to third parties, provided 
+that you may only distribute the Software for non-commercial 
+purposes and may not charge a fee or consideration of any kind 
+in connection with such distribution, and you must license the 
+Software under the terms no less restrictive than those 
+contained herein.  You will immediately notify Trafficrouter if you 
+become aware of any material breach of such terms relating to 
+the Software.
 
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
+1.3 The Software, and all worldwide intellectual property 
+rights therein, are the exclusive property of Trafficrouter and its 
+licensors. All rights in and to the Software not expressly 
+granted to you in this Agreement are reserved by Trafficrouter and 
+its licensors. Without limiting the foregoing, nothing in this 
+Agreement gives you a right to use any of Trafficrouter’s trade names, 
+trademarks, service marks, logos, domain names, or other 
+distinctive brand features.
 
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
+1.4 You may not use the Software for any purpose not expressly 
+permitted by this License Agreement.  You may not:
 
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
+* Except as expressly set forth herein, modify, create derivative 
+works of, reverse engineer, decompile, disassemble, or otherwise 
+attempt to derive the source code of the Software, or defeat, 
+bypass, or circumvent any security features of any code in the 
+Software, or authorize any third party to do any of the foregoing,
+except to the extent allowed under applicable law; 
 
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
+* License, sell, rent, lease, transfer, distribute, display, 
+host, outsource, disclose or otherwise commercially exploit 
+or make the Software available to any third party, except as 
+expressly permitted herein;
 
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
+* Access the Software in order to build a similar or competitive 
+product or service to Trafficrouter’s proprietary software; 
 
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
+* Remove, alter, or obscure in any way any proprietary rights 
+notices (including copyright notices) of Trafficrouter or its licensors 
+including or within copies of the Software;
 
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
 
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
+2.	Termination of this license agreement
+This Agreement will commence when you download or install the 
+Software and shall continue until this Agreement terminates. 
+You may terminate this Agreement at any time by ceasing your 
+use of the Software. Additionally, Trafficrouter may at any time, 
+terminate this Agreement: (a) immediately if you breach any 
+provision of this Agreement; (b) at any time upon 72 hours 
+notice to you. Upon termination of this Agreement, you must 
+immediately cease use of the Software and destroy all copies 
+of same. The provisions of Sections 1.3, 2  and 4 – 8 will 
+survive any termination of this Agreement.
 
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
+3.	Support
+Software is provided under an AS-IS basis and without any 
+support, updates or maintenance. Nothing in this Agreement 
+shall require Licensor to provide Licensee with support or 
+fixes to any bug, failure, mis-performance or other defect 
+in The Software.
 
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
+3.1 Bug Notification: Licensee may provide Licensor of details 
+regarding any bug, defect or failure in The Software promptly 
+and with no delay from such event; Licensee shall comply with 
+Licensor's request for information regarding bugs, defects or 
+failures and furnish him with information, screenshots and 
+try to reproduce such bugs, defects or failures.
 
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
+3.2 Feature Request: Licensee may request additional features 
+in Software, provided, however, that (i) Licensee shall waive 
+any claim or right in such feature should feature be developed 
+by Licensor; (ii) Licensee shall be prohibited from developing 
+the feature, or disclose such feature request, or feature, to 
+any 3rd party directly competing with Licensor or any 3rd party 
+which may be, following the development of such feature, in 
+direct competition with Licensor; (iii) Licensee warrants that 
+feature does not infringe any 3rd party patent, trademark, 
+trade-secret or any other intellectual property right; and (iv) 
+Licensee developed, envisioned or created the feature solely 
+by himself.
 
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
+4.	DISCLAIMER OF WARRANTIES
+THE SOFTWARE AND ANY INFORMATION AVAILABLE IN CONNECTION THEREWITH 
+ARE PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS, "WITH ALL 
+FAULTS" AND WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR 
+IMPLIED, INCLUDING, WITHOUT LIMITATION, (I) WARRANTIES OF 
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, OR 
+NON-INFRINGEMENT; (II) THE SOFTWARE BEING FREE OF BUGS OR ERRORS; 
+(III) USE OF THE SOFTWARE IN NUCLEAR POWER PLANTS, AIRCRAFT 
+NAVIGATION OR COMMUNICATIONS, AIR TRAFFIC CONTROL, WEAPONS SYSTEMS, 
+OR OTHER HIGH RISK ACTIVITIES.  SOME STATES AND JURISDICTIONS 
+DO NOT ALLOW LIMITATIONS ON HOW LONG AN IMPLIED WARRANT LASTS,
+SO SOME OF THE ABOVE LIMITATIONS MAY NOT APPLY TO YOU.
 
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
+5.	LIMITATION OF LIABILITY AND EXCLUSIVE REMEDY
 
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
+IN NO EVENT WILL TRAFFICROUTER BE LIABLE FOR ANY INDIRECT, INCIDENTAL, 
+CONSEQUENTIAL, SPECIAL, PUNITIVE, EXEMPLARY DAMAGES, OR ANY 
+OTHER DAMAGES ARISING OUT OF OR INANY WAY CONNECTED WITH THE SOFTWARE, 
+ANY INFORMATION AVAILABLE IN CONNECTION THEREWITH, OR THE DELAY OR 
+INABILITY TO USE THE SOFTWARE, OR ANY INFORMATION, EVEN IN THE EVENT OF FAULT, 
+TORT (INCLUDING NEGLIGENCE), STRICT LIABILITY, BREACH OF CONTRACT, 
+OR BREACH OF ANY WARRANTY AND EVEN IF TRAFFICROUTER HAS BEEN ADVISED OF 
+THE POSSIBILITY OF SUCH DAMAGES. YOU ACKNOWLEDGE AND AGREE THAT 
+YOUR SOLE AND EXCLUSIVE REMEDY FOR ANY DISPUTE WITH TRAFFICROUTER WITH 
+REGARD TO THE SOFTWARE IS TO DISCONTINUE USE OF THE SOFTWARE. 
+YOU HEREBY WAIVE ANY AND ALL CLAIMS AGAINST TRAFFICROUTER AND ITS AFFILIATES, 
+AGENTS, REPRESENTATIVES AND LICENSORS ARISING OUT OF THE SOFTWARE. 
+BECAUSE SOME STATES DO NOT ALLOW THE DISCLAIMER OF IMPLIED WARRANTIES 
+OR THE EXCLUSION OR LIMITATION OF CERTAIN TYPES OF DAMAGES, THESE 
+PROVISIONS MAY NOT APPLY TO YOU.  IF ANY PORTION OF THIS LIMITATION 
+ON LIABILITY IS FOUND TO BE INVALID OR UNENFORCEABLE FOR ANY REASON, 
+THEN TRAFFICROUTER’S TOTAL, CUMULATIVE LIABILITY ARISING FROM OR RELATING 
+TO THE SOFTWARE, UNDER ANY AND ALL THEORIES OF LIABILITY AND CAUSES 
+OF ACTION WILL BE LIMITED TO DIRECT DAMAGES UP TO AN AGGREGATE OF 
+FIFTY U.S. DOLLARS. THE LIMITATION OF LIABILITY HEREIN IS A FUNDAMENTAL 
+ELEMENT OF THE BASIS OF THE BARGAIN AND REFLECTS A FAIR ALLOCATION OF RISK.  
+THE SOFTWARE WOULD NOT BE PROVIDED WITHOUT SUCH LIMITATIONS AND YOU 
+AGREE THAT THE LIMITATIONS AND EXCLUSIONS OF LIABILITY, DISCLAIMERS 
+AND EXCLUSIVE REMEDIES SPECIFIED HEREIN WILL SURVIVE EVEN IF FOUND 
+TO HAVE FAILED IN THEIR ESSENTIAL PURPOSE.
 
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
+6.	Indemnification
+You agree to defend, indemnify and hold harmless Trafficrouter, its 
+licensors and eachof their affiliates from all liabilities, suits, 
+actions, damages, losses, claims and expenses, including attorneys' fees, 
+that arise from or in connection with your breach of this Agreement, 
+or use of the Software, including, but not limited to, the creation, 
+distribution, promotion and use of any Derived Software. 
+Trafficrouter reserves the right to assume the exclusive defense and 
+control of any matter subject to indemnification by you.
 
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
+7.	Modifications
+Trafficrouter reserves the right, at any time, to modify, suspend, or discontinue the 
+Software, or change access requirements, with or without notice. You agree 
+that Trafficrouter will not be liable to you or to any third party for any modification, 
+suspension, or discontinuance of the Software.  Trafficrouter reserves the right to 
+change the terms and conditions of this Agreement or its policies relating to 
+the Software at any time, and such changes will be effective thirty (30) days 
+after notice to you.  Your continued use of the Software after any such changes 
+take effect shall constitute your consent to such changes.  
 
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
+8.	Applicable law, jurisdiction
+This Agreement, and your relationship with Trafficrouter under this Agreement, shall 
+be governed by the laws of the State of California without regard to its 
+conflict of laws provisions. You and Trafficrouter hereby submit to the exclusive 
+jurisdiction of the courts located within the county of San Diego, California
+to resolve any legal matter arising from this Agreement. Notwithstanding the 
+foregoing, this Section shall not prevent Trafficrouter from seeking injunctive or 
+equitable relief in any court of competent jurisdiction.  The U.N. Convention 
+on Contracts for the International Sale of Goods will not apply to this 
+Agreement.
 
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
+9.	General legal terms
 
-   END OF TERMS AND CONDITIONS
+9.1 This Software License sets forth all rights for the user of the Software 
+and is the entire agreement between the parties. This Software License 
+supersedes any other communications with respect to the Software. 
+You agree that this Software License is not intended to confer and does 
+not confer any rights or remedies upon any person other than the parties 
+to this Software License. No provision hereof shall be deemed waived unless 
+such waiver shall be in writing and signed by Trafficrouter. If any provision of 
+this Software License is held invalid or unenforceable, the remainder of 
+this Software License shall continue in full force and effect, and such 
+provision shall be reformed only to the extent necessary to make it valid 
+and enforceable. The parties confirm that it is their wish that this 
+Agreement has been written in the English language only (or an equivalent 
+type of urgent legal relief) in any jurisdiction.  Your rights under this 
+Agreement are nonexclusive and personal and cannot be assigned, sublicensed 
+or transferred in any other manner to anyone else, and any attempted assignment, 
+sublicense, or transfer will be null and void.
 
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2017 Ashish Thakwani
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+9.2 EXPORT RESTRICTIONS. YOU ACKNOWLEDGE THAT THE SOFTWARE IS OF U.S. ORIGIN. YOU 
+AGREE TO COMPLY WITH ALL APPLICABLE INTERNATIONAL AND NATIONAL LAWS THAT APPLY 
+TO THESE PRODUCTS, INCLUDING THE U.S. EXPORT ADMINISTRATION REGULATIONS, AS WELL
+AS END-USER, END-USE AND DESTINATION RESTRICTIONS BY U.S. AND OTHER GOVERNMENTS. 

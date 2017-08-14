@@ -1,15 +1,7 @@
-/* Copyright 2017, Ashish Thakwani. 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.LICENSE file.
+/* Copyright (C) Ashish Thakwani - All Rights Reserved
+ * Unauthorized copying of this file, via any medium is strictly prohibited
+ * Proprietary and confidential
+ * Written by Ashish Thakwani <athakwani@gmail.com>, August 2017
  */
 package portmap
 
@@ -45,6 +37,7 @@ type Portmap struct {
     watcher       *fsnotify.Watcher
     event         chan *Event
     isLeader      bool
+    dynamicMap    bool
 }
 
 /*
@@ -58,9 +51,6 @@ func (m *Portmap) IsLeader() bool {
  *  Compete for leadership by obtaining exclusive lock on leader file.
  */
 func (m *Portmap) electLeader(blocking bool) bool {
-
-    // Retry acquiring lock
-    log.Debug("electLeader(): retrying")
 
     // Check if election is over?
     // Set mode flags to either blocking or non-blocking
@@ -88,10 +78,11 @@ func (m *Portmap) electLeader(blocking bool) bool {
 /*
  *  New portmap
  */
-func New(name string, electLeader bool) (*Portmap, chan *Event) {
+func New(name string, electLeader bool, dynamicMap bool) (*Portmap, chan *Event) {
     
     m := Portmap{mapfile: utils.RUNPATH + name + ".map",
-                 leaderfile: utils.RUNPATH + name + ".leader"}
+                 leaderfile: utils.RUNPATH + name + ".leader",
+                 dynamicMap: dynamicMap}
 
     // initilize members
     m.event = make(chan *Event, 10)
@@ -110,15 +101,18 @@ func New(name string, electLeader bool) (*Portmap, chan *Event) {
         }
     }
     
-    // Read file
-    ok := m.read()
-    if !ok {
-        return nil, nil
+    // dynamicMap: Retrive & store port mapping from file
+    if dynamicMap {
+        // Read file
+        ok := m.read()
+        if !ok {
+            return nil, nil
+        }        
+    
+        // Setup file watch
+        err := m.watch()
+        utils.Check(err)        
     }
-        
-    // Setup file watch
-    err := m.watch()
-    utils.Check(err)
     
     return &m, m.event
 }
@@ -129,11 +123,11 @@ func New(name string, electLeader bool) (*Portmap, chan *Event) {
 func (m *Portmap) Add(lport string, rport string) {
 
     log.Debug("ADD(): before m.portmap=", m.portmap)
-    ok := m.add(lport, rport)
+    m.add(lport, rport)
     log.Debug("ADD(): after m.portmap=", m.portmap)
     
-    if ok {
-        m.write()
+    if m.dynamicMap {
+        m.write(lport, rport)
     }
 }
 
@@ -178,33 +172,33 @@ func (m *Portmap) read() bool {
 
     // Release file lock
     defer utils.UnlockFile(file)
-    
+
     // Read file
     bytes, err := ioutil.ReadAll(file)
     if err != nil {
         fmt.Printf("File read error: %v\n", err)
         return false
     }
-    
+
     var data map[string]string
-        
+
     // Parse content
     err = json.Unmarshal(bytes, &data)
     if err != nil && len(bytes) != 0 {
         log.Error("Error unmarshaling file content", err)
         return false
     }
-    
+
     // Init empty map
     if data == nil {
         log.Debug("read(): Initializing empty map")
         data = make(map [string]string, 1)
     }
-    
+
     log.Debug("Read(): ", string(bytes))
+
+    m.update(data)        
     
-    m.update(data)
-        
     return true
 }
 
@@ -233,28 +227,53 @@ func (m *Portmap) update(data map[string]string) {
 /*
  *  Write port map file
  */
-func (m * Portmap) write() bool {
+func (m * Portmap) write(lport string, rport string) bool {
 
     // Get exclusive lock on file to avoid corruption.
     file, _ := utils.LockFile(m.mapfile, true, utils.LOCK_SH)     
 
     // Release file lock
     defer utils.UnlockFile(file)
+
+    // Read file
+    bytes, err := ioutil.ReadAll(file)
+    if err != nil {
+        fmt.Printf("write(): File read error: %v\n", err)
+        return false
+    }
+
+    var data map[string]string
+
+    // Parse content
+    err = json.Unmarshal(bytes, &data)
+    if err != nil && len(bytes) != 0 {
+        log.Error("write(): Error unmarshaling file content", err)
+        return false
+    }
+
+    // Init empty map
+    if data == nil {
+        log.Debug("write(): Initializing empty map")
+        data = make(map [string]string, 1)
+    }    
+    
+    // Add port mapping
+    data[lport] = rport
     
     // encode content
-    jsonp, err := json.Marshal(m.portmap)
+    jsonp, err := json.Marshal(data)
     if err != nil {
         fmt.Println(err)
         return false
     }
-    
-    log.Debug("portmap = ", string(jsonp))
-    
+
+    log.Debug("write(): portmap = ", string(jsonp))
+
     _, err = file.Write(jsonp)
     if err != nil {
-        fmt.Println("Error writing file ", err)
+        fmt.Println("write(): Error writing file ", err)
         return false
-    } 
+    }         
 
     return true
 }
@@ -267,11 +286,11 @@ func (m *Portmap) dispatch(ev int, k string, v string) {
 /*
  *  Add port entry
  */
-func (m *Portmap) add(lport string, rport string) bool {
+func (m *Portmap) add(lport string, rport string) {
 
     // Skip adding incomplete mapping for non leader
     if !m.isLeader && rport == "0" {
-        return false
+        return
     }
     
     var event = ADDED
@@ -280,7 +299,7 @@ func (m *Portmap) add(lport string, rport string) bool {
         
         // Skip Overwriting if mapping already exists.
         if rport == "0" || rport == mport {
-            return false
+            return
         }
 
         event = UPDATED    
@@ -288,7 +307,6 @@ func (m *Portmap) add(lport string, rport string) bool {
     
     m.portmap[lport] = rport
     m.dispatch(event, lport, rport)
-    return true
 }
 
 /*

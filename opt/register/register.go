@@ -1,15 +1,7 @@
-/* Copyright 2017, Ashish Thakwani. 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.LICENSE file.
+/* Copyright (C) Ashish Thakwani - All Rights Reserved
+ * Unauthorized copying of this file, via any medium is strictly prohibited
+ * Proprietary and confidential
+ * Written by Ashish Thakwani <athakwani@gmail.com>, August 2017
  */
 package register
 
@@ -90,8 +82,14 @@ func forEach(opts []string, cb parsecb) {
                   "rport=", r.rport, ",",
                   "ruser=", r.user)
         
+        dynamicMap := false
+        
+        if r.rport == "0" {
+            dynamicMap = true
+        }
+        
         // Initliaze port map to get events of new port mappings.
-        r.pmap, r.events = portmap.New(r.user, true)            
+        r.pmap, r.events = portmap.New(r.user, true, dynamicMap)            
         log.Debug("mapReader=", r.pmap, " event chan =", r.events)
 
         cb(&r)
@@ -177,7 +175,7 @@ func eventloop(r *reg, passwd string, interval int, debug bool) {
         event := <-r.events
         if event.Type == portmap.ADDED {
             r.lport = event.Lport
-            r.rport = event.Rport
+            r.rport = event.Rport            
             go connect(*r, passwd, interval, debug)
         } else if event.Type == portmap.DELETED {
             // Disconnect all connections for LPORT by closing goroutine channel.

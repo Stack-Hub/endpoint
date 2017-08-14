@@ -1,15 +1,7 @@
-/* Copyright 2017, Ashish Thakwani. 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.LICENSE file.
+/* Copyright (C) Ashish Thakwani - All Rights Reserved
+ * Unauthorized copying of this file, via any medium is strictly prohibited
+ * Proprietary and confidential
+ * Written by Ashish Thakwani <athakwani@gmail.com>, August 2017
  */
 package main
 
@@ -144,11 +136,6 @@ func main() {
 			Name:  "debug, D",
 			Usage: "Enable debug logging",
 		},
-        cli.StringFlag{
-			Name:  "passwd, p",
-			Usage: "Password to secure connections",
-			Value: "123456789",
-		},	
         cli.StringSliceFlag{
 			Name:  "require, req",
             Usage: "Services required for application. Format `app:port@laddr[:lport]` e.g. db:3306@localhost",
@@ -199,9 +186,9 @@ func main() {
             return nil
         }
 
-        passwd := c.String("passwd")
+        passwd := os.Getenv("PASSWD")
         if passwd == "" {
-            log.Fatal("Empty password. Please provide password with --passwd option")
+            passwd = "123456789"
         }
 
         // Set ulimit to max

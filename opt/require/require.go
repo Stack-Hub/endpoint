@@ -1,15 +1,7 @@
-/* Copyright 2017, Ashish Thakwani. 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.LICENSE file.
+/* Copyright (C) Ashish Thakwani - All Rights Reserved
+ * Unauthorized copying of this file, via any medium is strictly prohibited
+ * Proprietary and confidential
+ * Written by Ashish Thakwani <athakwani@gmail.com>, August 2017
  */
 package require
 
@@ -37,7 +29,6 @@ type req struct {
     lport string               //local port to connect
     rhost string               //remote host to connect to
     rport string               //remote port to map to
-    _type string               //dynamic or load balanced type
     user  string               //username
     lb    *net.Listener        //Listener socket for load balancer
 }
@@ -55,9 +46,8 @@ func forEach(opts []string, cb parsecb) {
 
     for _, opt := range opts {
         var r req
-        r.rhost, r.rport, r.lhost, r._type, r.lport = parse(opt)
+        r.rhost, r.rport, r.lhost, r.lport = parse(opt)
 
-        
         r.user = r.rhost
         log.Debug("r.user=", r.user)
 
@@ -68,7 +58,6 @@ func forEach(opts []string, cb parsecb) {
         log.Debug("raddr=", r.rhost, ",",
                   "rport=", r.rport, ",",
                   "laddr=", r.lhost, ",",
-                  "type=",  r._type, ",",
                   "lport=", r.lport)
         
         cb(r)
@@ -77,22 +66,17 @@ func forEach(opts []string, cb parsecb) {
 
 /*
  * parse --require option
- * Formats rhost:rport@lhost:?      - random port mapping 
- *         rhost:rport@lhost:>lport - load balance rport to lport
+ * Formats rhost:rport             - one2one port mapping
+ *         rhost:rport>lhost:lport - load balance rport to lport
  */
-func parse(str string) (string, string, string, string, string) {
-    var expr = regexp.MustCompile(`^(.+):([0-9]+|\*)@([^:\*]+)(:?((\>([0-9]+|\?))|(\?)))?$`)
+func parse(str string) (string, string, string, string) {
+    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(>([a-zA-Z0-9]+):([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
 	if len(str) == 0 {
-        utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport@lhost(:lport)? or rhost:rport@lhost(:>lport)? lport can be port number for static mapping or ? for dynamic mapping\n", str)))
+        utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport[>lhost:lport]\n", str)))
 	}
-    
-    part7 := ""
-    if parts[5] != "?" {
-        part7 = parts[7]
-    }
-    
-    return parts[1], parts[2], parts[3], parts[5], part7
+        
+    return parts[1], parts[2], parts[4], parts[5]
 }
 
 
@@ -116,6 +100,85 @@ func getIP(iface string) (*net.TCPAddr, error) {
     }    
     
     return tcpAddr, nil
+}
+
+/*
+ * Connection added evant callback
+ * When all services connect, invoke async callback
+ */
+func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
+
+    // If this is first connection then decrement callback ticker
+    if m.Len() == 0 {
+        cbTicker--
+    }
+    
+    m.Add(p, h)
+    fmt.Printf("Connected %s from %s:%d at Port %d\n", 
+               uname, 
+               h.RemoteIP, 
+               h.Config.Port, 
+               h.ListenPort)
+    
+    // If this is first connection start listening on load balanced port
+    r := m.Userdata.(req)
+    if len(r.lhost) > 0 && m.Len() == 1 {
+        r.lb = listen(m, strconv.Itoa(int(h.ListenPort)), r.lport)
+    }
+    
+    // All required connections are established
+    // inform the caller with async callback and 
+    // unset cbTicker.
+    if cbTicker == 0 {
+        cbTicker = -1
+        log.Debug("cbTicker =", cbTicker)
+        log.Debug(asyncCB)
+        if asyncCB != nil {
+            asyncCB()
+        }
+    }
+    
+}
+
+/*
+ * Connection removed callback
+ */
+func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
+    m.Remove(p)
+    fmt.Printf("Removed %s from %s:%d at Port %d\n", 
+               uname, 
+               h.RemoteIP, 
+               h.Config.Port, 
+               h.ListenPort)
+    
+    // If this is last connection then close listener
+    //if m.Len() == 0 {
+    //    r := m.Userdata.(req)
+    //    r.lb.Close()
+    //}
+    
+}
+
+func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
+    addr := fmt.Sprintf("%s:%s", "localhost", lport)
+    log.Debug("addr=", addr)
+
+    fmt.Printf("Listening on %s\n", addr)
+    l, err := net.Listen("tcp", addr)
+    utils.Check(err)
+
+    go func() {
+        for {
+            // Listen for an incoming connection.
+            conn, err := l.Accept()
+            utils.Check(err)
+
+            // Handle connections in a new goroutine.
+            go handleRequest(m, conn)
+        }            
+    }()
+    
+    return &l
 }
 
 /*
@@ -166,87 +229,6 @@ func handleRequest(m *omap.OMap, in net.Conn) {
         break
     }
     
-}
-
-/*
- * Connection added evant callback
- * When all services connect, invoke async callback
- */
-func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
-
-    // If this is first connection then decrement callback ticker
-    if m.Len() == 0 {
-        cbTicker--
-    }
-    
-    m.Add(p, h)
-    fmt.Printf("Connected %s from %s:%d at Port %d\n", 
-               uname, 
-               h.RemoteIP, 
-               h.Config.Port, 
-               h.ListenPort)
-    
-    // TODO:Add condition for stateless 
-    // If this is first connection start listening on load balanced port
-    r := m.Userdata.(req)
-    if r._type[0] == '>' && m.Len() == 1 {
-        r.lb = listen(m, strconv.Itoa(int(h.ListenPort)), r.lport)
-    }
-    
-    // All required connections are established
-    // inform the caller with async callback and 
-    // unset cbTicker.
-    if cbTicker == 0 {
-        cbTicker = -1
-        log.Debug("cbTicker =", cbTicker)
-        log.Debug(asyncCB)
-        if asyncCB != nil {
-            asyncCB()
-        }
-    }
-    
-}
-
-/*
- * Connection removed callback
- */
-func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
-    m.Remove(p)
-    fmt.Printf("Removed %s from %s:%d at Port %d\n", 
-               uname, 
-               h.RemoteIP, 
-               h.Config.Port, 
-               h.ListenPort)
-    
-    // TODO:Add condition for stateless 
-    // If this is last connection then close listener
-    //if m.Len() == 0 {
-    //    r := m.Userdata.(req)
-    //    r.lb.Close()
-    //}
-    
-}
-
-func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
-    addr := fmt.Sprintf("%s:%s", "localhost", lport)
-    log.Debug("addr=", addr)
-
-    fmt.Printf("Listening on %s\n", addr)
-    l, err := net.Listen("tcp", addr)
-    utils.Check(err)
-
-    go func() {
-        for {
-            // Listen for an incoming connection.
-            conn, err := l.Accept()
-            utils.Check(err)
-
-            // Handle connections in a new goroutine.
-            go handleRequest(m, conn)
-        }            
-    }()
-    
-    return &l
 }
 
 /*
