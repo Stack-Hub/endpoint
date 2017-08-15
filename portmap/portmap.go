@@ -161,11 +161,11 @@ func (m *Portmap) watch() error {
 		for {
             select {
             case ev := <-m.watcher.Events:
-                log.Println("Recieved watcher event ", ev)
+                log.Debug("Recieved watcher event ", ev)
                 m.read()
                 
 			case err := <-m.watcher.Errors:
-				log.Println("Watcher error:", err)
+				log.Debug("Watcher error:", err)
 			}
 		}
 	}()
