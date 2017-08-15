@@ -37,7 +37,6 @@ func listen(fd C.int, backlog C.int) int32 {
 
     sock, err := syscall.Getsockname(int(fd))
     if (err != nil) {
-        fmt.Println(err)
         return reallisten(fd, backlog)        
     }
     
@@ -69,7 +68,6 @@ func close(fd C.int) int32 {
 
     sock, err := syscall.Getsockname(int(fd))
     if (err != nil) {
-        fmt.Println(err)
         return realclose(fd)        
     }
     
