@@ -19,7 +19,7 @@ import (
 // go build -buildmode=c-shared -o listener.so listener.go
 
 // Initliaze port map to get events of new port mappings.
-var pmap, _ = portmap.New(os.Getenv("APPNAME"), false, true)
+var pmap, _ = portmap.New(os.Getenv("REPO_NAME"), false, true)
 
 func main() {}
 
@@ -44,11 +44,45 @@ func listen(fd C.int, backlog C.int) int32 {
     switch sock.(type) {
         case *syscall.SockaddrInet4:
             pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet4).Port), "0")
-            fmt.Println("Litening detected on port", strconv.Itoa(sock.(*syscall.SockaddrInet4).Port))
+
+        /* Only v4 is supported for now.
         case *syscall.SockaddrInet6:
             pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet6).Port), "0")
             fmt.Println("Litening detected on ", strconv.Itoa(sock.(*syscall.SockaddrInet6).Port))
+        */
     }
 
     return reallisten(fd, backlog)
+}
+
+//export close
+func close(fd C.int) int32 {
+    
+    lib, err := dl.Open("libc", 0)
+    if err != nil {
+        return 0
+    }
+    defer lib.Close()
+
+    var realclose func(fd C.int) int32
+    lib.Sym("close", &realclose)
+
+    sock, err := syscall.Getsockname(int(fd))
+    if (err != nil) {
+        fmt.Println(err)
+        return realclose(fd)        
+    }
+    
+    switch sock.(type) {
+        case *syscall.SockaddrInet4:
+            pmap.Delete(strconv.Itoa(sock.(*syscall.SockaddrInet4).Port))
+
+        /* Only v4 is supported for now.
+        case *syscall.SockaddrInet6:
+            pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet6).Port), "0")
+            fmt.Println("Litening detected on ", strconv.Itoa(sock.(*syscall.SockaddrInet6).Port))
+        */
+    }
+
+    return realclose(fd)
 }

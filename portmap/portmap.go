@@ -127,9 +127,21 @@ func (m *Portmap) Add(lport string, rport string) {
     log.Debug("ADD(): after m.portmap=", m.portmap)
     
     if m.dynamicMap {
-        m.write(lport, rport)
+        m.write(lport, rport, false)
     }
 }
+
+/*
+ *  Add port mapping
+ */
+func (m *Portmap) Delete(lport string) {
+
+    m.delete(lport)    
+    if m.dynamicMap {
+        m.write(lport, "0", true)
+    }
+}
+
 
 /*
  *  Implements fsnotify file system watcher
@@ -227,7 +239,7 @@ func (m *Portmap) update(data map[string]string) {
 /*
  *  Write port map file
  */
-func (m * Portmap) write(lport string, rport string) bool {
+func (m * Portmap) write(lport string, rport string, isDelete bool) bool {
 
     // Get exclusive lock on file to avoid corruption.
     file, _ := utils.LockFile(m.mapfile, false, utils.LOCK_SH)     
@@ -257,8 +269,15 @@ func (m * Portmap) write(lport string, rport string) bool {
         data = make(map [string]string, 1)
     }    
     
-    // Add port mapping
-    data[lport] = rport
+    if !isDelete {
+        if _, ok := data[lport]; !ok {
+            // Add port mapping
+            data[lport] = rport            
+        }
+    } else
+    {
+        delete(data, lport)
+    }
     
     // encode content
     jsonp, err := json.Marshal(data)
