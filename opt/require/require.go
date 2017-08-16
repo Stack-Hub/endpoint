@@ -12,6 +12,7 @@ import (
     "strconv"
     "regexp"
     "errors"
+    "encoding/json"
     
     "github.com/duppercloud/trafficrouter/omap"
     "github.com/duppercloud/trafficrouter/user"
@@ -70,8 +71,9 @@ func forEach(opts []string, cb parsecb) {
  *         rhost:rport>lhost:lport - load balance rport to lport
  */
 func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(>([a-zA-Z0-9]+):([0-9]+))?$`)
+    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(>((?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])):([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
+    
 	if len(str) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport[>lhost:lport]\n", str)))
 	}
@@ -114,16 +116,16 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     }
     
     m.Add(p, h)
-    fmt.Printf("Connected %s from %s:%d at Port %d\n", 
-               uname, 
-               h.RemoteIP, 
-               h.Config.Port, 
-               h.ListenPort)
+    
+    payload, err := json.Marshal(h)
+    utils.Check(err)
+    fmt.Println("Connected", string(payload))
     
     // If this is first connection start listening on load balanced port
     r := m.Userdata.(req)
-    if len(r.lhost) > 0 && m.Len() == 1 {
-        r.lb = listen(m, strconv.Itoa(int(h.ListenPort)), r.lport)
+    if len(r.lhost) > 0 && m.Len() == 1 && r.lb == nil {
+        r.lb = listen(m, r.lhost, r.lport)
+        m.Userdata = r
     }
     
     // All required connections are established
@@ -145,22 +147,14 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
  */
 func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     m.Remove(p)
-    fmt.Printf("Removed %s from %s:%d at Port %d\n", 
-               uname, 
-               h.RemoteIP, 
-               h.Config.Port, 
-               h.ListenPort)
-    
-    // If this is last connection then close listener
-    //if m.Len() == 0 {
-    //    r := m.Userdata.(req)
-    //    r.lb.Close()
-    //}
-    
+
+    payload, err := json.Marshal(h)
+    utils.Check(err)
+    fmt.Println("Removed", string(payload))
 }
 
 func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
-    addr := fmt.Sprintf("%s:%s", "localhost", lport)
+    addr := fmt.Sprintf("%s:%s", lhost, lport)
     log.Debug("addr=", addr)
 
     fmt.Printf("Listening on %s\n", addr)
