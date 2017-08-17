@@ -71,7 +71,7 @@ func forEach(opts []string, cb parsecb) {
  *         rhost:rport>lhost:lport - load balance rport to lport
  */
 func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(>((?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])):([0-9]+))?$`)
+    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(>([a-zA-Z][a-zA-Z0-9]+):([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
     
 	if len(str) == 0 {
@@ -85,23 +85,24 @@ func parse(str string) (string, string, string, string) {
 /*
 * Get interface IP address
  */
-func getIP(iface string) (*net.TCPAddr, error) {
+func getIP(iface string) (*net.IPAddr) {
+    
+    ip := []byte{127,0,0,1}
     
     ief, err := net.InterfaceByName(iface)
-    if err !=nil{
-        return nil, err
+    
+    if err == nil {
+        addrs, err := ief.Addrs()
+        if err == nil {
+            ip = addrs[0].(*net.IPNet).IP        
+        }
     }
 
-    addrs, err := ief.Addrs()
-    if err !=nil{
-        return nil, err
-    }
-
-    tcpAddr := &net.TCPAddr{
-        IP: addrs[0].(*net.IPNet).IP,
+    ipAddr := &net.IPAddr{
+        IP: ip,
     }    
     
-    return tcpAddr, nil
+    return ipAddr
 }
 
 /*
@@ -150,11 +151,14 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 
     payload, err := json.Marshal(h)
     utils.Check(err)
-    fmt.Println("Removed", string(payload))
+    fmt.Println("Disconnected", string(payload))
 }
 
 func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
-    addr := fmt.Sprintf("%s:%s", lhost, lport)
+
+    ipAddr := getIP(lhost)
+
+    addr := fmt.Sprintf("%s:%s", ipAddr.String(), lport)
     log.Debug("addr=", addr)
 
     fmt.Printf("Listening on %s\n", addr)
@@ -197,16 +201,11 @@ func handleRequest(m *omap.OMap, in net.Conn) {
                  * This allows them to directly reach the client at it's IP address.
                  */
 
-                tcpAddr, err := getIP("eth0")
-                if err != nil {
-                    tcpAddr = &net.TCPAddr{
-                        IP: []byte{127,0,0,1},
-                    }    
-                }
+                ipAddr := getIP("eth0")
                 
-                log.Debug("Binding to ", tcpAddr)
+                log.Debug("Binding to ", ipAddr)
                 
-                d := net.Dialer{LocalAddr: tcpAddr}
+                d := net.Dialer{LocalAddr: ipAddr}
                 out, err := d.Dial("tcp", "127.0.0.1:" + port)
                 // Connection failed, remove connection information from the list
                 if err != nil {
