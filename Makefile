@@ -45,7 +45,7 @@ clean:
 	rm -rf release
 
 package: trafficrouter
-	cd release/${OS}/${ARCH} && tar -czvf ${BINARY}-${VERSION}.tgz bin/${BINARY}
+	cd release/${OS}/${ARCH} && tar -czvf ${BINARY}-${VERSION}.tgz -T ../../../release_files.txt
 
 upload: package
 	aws --region us-west-1 s3 cp release/${OS}/${ARCH}/${BINARY}-${VERSION}.tgz s3://get.dupper.co/${BINARY}/builds/${OS}/${ARCH}/${BINARY}-${VERSION}.tgz --acl public-read

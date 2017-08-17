@@ -29,7 +29,7 @@ Match User %s
     AllowAgentForwarding no
     PermitTTY yes
     AcceptEnv SSH_RFWD
-    ForceCommand /usr/sbin/trafficrouter -f $SSH_ORIGINAL_COMMAND
+    ForceCommand /usr/local/bin/trafficrouter -f $SSH_ORIGINAL_COMMAND
 `
 )
 

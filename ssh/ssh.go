@@ -50,7 +50,8 @@ func Connect(u string, pass string, ip string, lport string, rport string, hash 
                      "-o", "StrictHostkeyChecking=no", 
                      "-o", "UserKnownHostsFile=/dev/null", 
                      "-o", "SendEnv=SSH_RFWD", 
-                     "-R", rport + ":localhost:" + lport, u + "@" + ip, 
+                     "-R", rport + ":localhost:" + lport, 
+                     u + "@" + ip, 
                      "--",
                      isDebug(),
                      "{\"port\":" + lport + "}"}
@@ -58,7 +59,7 @@ func Connect(u string, pass string, ip string, lport string, rport string, hash 
     log.Debug("Connecting ", hash)
     
     if rport == "0" {
-        os.Setenv("LD_PRELOAD","/usr/lib/trafficrouter/rfwd.so")
+        os.Setenv("LD_PRELOAD","/usr/local/lib/rfwd.so")
     } else {
         os.Setenv("SSH_RFWD",rport)
     }

@@ -130,7 +130,7 @@ func main() {
 	app.Version = version.FullVersion()
 	app.Author = "@athakwani"
 	app.Email = "athakwani@gmail.com"
-	app.Usage = "Zero-config push based load balancer"
+	app.Usage = "Zero-config push based traffic router"
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
 			Name:  "debug, D",
@@ -138,11 +138,11 @@ func main() {
 		},
         cli.StringSliceFlag{
 			Name:  "require, req",
-            Usage: "Services required for application. Format `app:port@laddr[:lport]` e.g. db:3306@localhost",
+            Usage: "Services required for application. Format `app:port[>laddr:lport]` e.g. db:3306 or app:8000>eth0:80",
 		},	
         cli.StringSliceFlag{
 			Name:  "register, reg",
-            Usage: "Register this service. Format `app:port@raddr` e.g. app:80@lb",
+            Usage: "Register this service. Format `app:port@raddr[:rport]` e.g. app:80@lb or app:80@lb:80 or app:80@lb:0",
 		},	
         cli.BoolFlag{
 			Name:  "forcecmd, f",

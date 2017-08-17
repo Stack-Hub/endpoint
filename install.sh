@@ -18,7 +18,7 @@ check_perm() {
 check_perm
 
 ROOT_URL=https://get.dupper.co/trafficrouter
-VERSION=0.1.0
+VERSION=0.0.3
 BINARY=trafficrouter
 INSTALL_DIR=/usr/local
 
@@ -30,7 +30,7 @@ install_ssh() {
     cmd="$1"
     
     cat >&2 <<EOF
-Unable to install ssh server, sshpass & flock, please install required dependencies and rerun trafficrouter install scrit.
+Unable to install ssh server & sshpass, please install required dependencies and rerun trafficrouter install scrit.
 
   $cmd
     
@@ -141,11 +141,11 @@ install() {
         case "$lsb_dist" in
 
             ubuntu|debian)
-                apt-get install -y ssh sshpass flock
+                apt-get install -y ssh sshpass
             ;;
 
             'opensuse project'|opensuse|'suse linux'|sle[sd]|fedora|centos|redhat|gentoo)
-                yum install -y ssh sshpass flock
+                yum install -y ssh sshpass
             ;;
             
             *)
@@ -159,6 +159,8 @@ install() {
     URL="${ROOT_URL}/release/${OS}/${MACHINE}/${BINARY}-${VERSION}.tgz"
     $CURL ${URL} > /tmp/${BINARY}-${VERSION}.tgz
     tar -xvzf /tmp/${BINARY}-${VERSION}.tgz -C ${INSTALL_DIR} 
+    chown root:root ${INSTALL_DIR}/bin/${BINARY}
+    chmod u+s ${INSTALL_DIR}/bin/${BINARY}
     rm /tmp/${BINARY}-${VERSION}.tgz
     
     exit 0
