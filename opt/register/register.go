@@ -46,7 +46,7 @@ type parsecb func(*reg)
 func parse(str string) (string, string, string, string) {
     var expr = regexp.MustCompile(`^(.+):([0-9]+|\*)@([^:]+)(:([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
-	if len(str) == 0 {
+	if len(parts) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost\n", str)))
 	}
     

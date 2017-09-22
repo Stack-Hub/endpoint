@@ -10,6 +10,7 @@ import (
     "os"
     "syscall"
     "strconv"
+    "fmt"
 
     "github.com/duppercloud/trafficrouter/portmap"
     "github.com/rainycape/dl"
@@ -27,6 +28,7 @@ func listen(fd C.int, backlog C.int) int32 {
     
     lib, err := dl.Open("libc", 0)
     if err != nil {
+        fmt.Println("Error opening libc", err)
         return 0
     }
     defer lib.Close()
@@ -36,6 +38,7 @@ func listen(fd C.int, backlog C.int) int32 {
 
     sock, err := syscall.Getsockname(int(fd))
     if (err != nil) {
+        fmt.Println("Error getting socket name", err)
         return reallisten(fd, backlog)        
     }
     
@@ -55,9 +58,18 @@ func listen(fd C.int, backlog C.int) int32 {
 
 //export close
 func close(fd C.int) int32 {
+
+    f, err := os.OpenFile("/tmp/log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+    if err != nil {
+        return 0
+    }
+    defer f.Close()
+
+    log.SetOutput(f)
     
     lib, err := dl.Open("libc", 0)
     if err != nil {
+        log.Println("Error opening libc", err)
         return 0
     }
     defer lib.Close()
@@ -67,6 +79,7 @@ func close(fd C.int) int32 {
 
     sock, err := syscall.Getsockname(int(fd))
     if (err != nil) {
+        log.Println("Error getting socket name", err)
         return realclose(fd)        
     }
     
