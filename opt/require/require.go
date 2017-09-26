@@ -9,6 +9,8 @@ import (
     "fmt"
     "net"
     "io"
+    "os"
+    "os/exec"
     "strconv"
     "regexp"
     "errors"
@@ -122,6 +124,16 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     utils.Check(err)
     fmt.Println("Connected", string(payload))
     
+	cmd := "bash"
+    args := []string{"/var/lib/dupper/onconnect",
+                    string(payload),}
+    
+    c := exec.Command(cmd, args...)
+    c.Stdout = os.Stdout
+    c.Stderr = os.Stderr
+    err = c.Start()
+    utils.Check(err)
+    
     // If this is first connection start listening on load balanced port
     r := m.Userdata.(req)
     if len(r.lhost) > 0 && m.Len() == 1 && r.lb == nil {
@@ -152,6 +164,17 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     payload, err := json.Marshal(h)
     utils.Check(err)
     fmt.Println("Disconnected", string(payload))
+
+    cmd := "bash"
+    args := []string{"/var/lib/dupper/ondisconnect",
+                     string(payload),}
+    
+    c := exec.Command(cmd, args...)
+    c.Stdout = os.Stdout
+    c.Stderr = os.Stderr
+    err = c.Start()
+    utils.Check(err)
+    
 }
 
 func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {

@@ -50,12 +50,15 @@ func Connect(u string, pass string, ip string, lport string, rport string, hash 
                      "-o", "StrictHostkeyChecking=no", 
                      "-o", "UserKnownHostsFile=/dev/null", 
                      "-o", "SendEnv=SSH_RFWD", 
+                     "-o", "ExitOnForwardFailure=true",
                      "-R", rport + ":localhost:" + lport, 
                      u + "@" + ip, 
                      "--",
                      isDebug(),
                      "{\"port\":" + lport + "}"}
 
+    log.Debug("ssh=", cmd, args)
+    
     log.Debug("Connecting ", hash)
     
     if rport == "0" {
