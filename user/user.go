@@ -135,7 +135,6 @@ func removeConfig(path, username string) error {
  * Restart SSH Server
  */
 func restartServer() error {    
-      
 	cmdName := "service"
     cmdArgs := []string{"ssh", "restart"}
     

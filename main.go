@@ -10,7 +10,6 @@ import (
     "os/signal"
     "os/exec"
     "syscall"
-    b64 "encoding/base64"
     
     "github.com/duppercloud/trafficrouter/monitor"
     "github.com/duppercloud/trafficrouter/config"
@@ -198,25 +197,6 @@ func main() {
         // Poll specific values
         count := c.Int("count")
         interval := c.Int("interval")
-        
-        onConnectEnc := c.String("on-connect")
-        if onConnectEnc == "" {
-            onConnectEnc = os.Getenv("ONCONNECT")
-        }
-        
-        onDisconnectEnc := c.String("on-disconnect")
-        if onDisconnectEnc == "" {
-            onDisconnectEnc = os.Getenv("ONDISCONNECT")
-        }
-
-        log.Debug("onConnectEnc=", onConnectEnc)
-        log.Debug("onDisconnectEnc=", onDisconnectEnc)
-        
-        onConnect, _ := b64.StdEncoding.DecodeString(onConnectEnc)
-        onDisconnect, _ := b64.StdEncoding.DecodeString(onDisconnectEnc)
-        
-        log.Debug("onConnect=", string(onConnect))
-        log.Debug("onDisconnect=", string(onDisconnect))
         
         debug := c.Bool("D")
         // Wait for Needed service before registering.

@@ -50,8 +50,14 @@ func parse(str string) (string, string, string, string) {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost\n", str)))
 	}
     
+    // if remote port no specified then defauls to local port. 
+    // However, if local port is * then use dynamic mapping. 
     if len(parts[5]) == 0 {
-        parts[5] = "0"
+        if parts[2] == "*" {
+            parts[5] = "0"
+        } else {
+            parts[5] = parts[2]
+        }
     }
     
     return parts[1], parts[2], parts[3], parts[5]
@@ -81,15 +87,9 @@ func forEach(opts []string, cb parsecb) {
                   "rhost=", r.rhost, ",",
                   "rport=", r.rport, ",",
                   "ruser=", r.user)
-        
-        dynamicMap := false
-        
-        if r.rport == "0" {
-            dynamicMap = true
-        }
-        
+                
         // Initliaze port map to get events of new port mappings.
-        r.pmap, r.events = portmap.New(r.user, true, dynamicMap)            
+        r.pmap, r.events = portmap.New(r.user, true)
         log.Debug("mapReader=", r.pmap, " event chan =", r.events)
 
         cb(&r)

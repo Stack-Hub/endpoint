@@ -19,7 +19,7 @@ import (
 // go build -buildmode=c-shared -o listener.so listener.go
 
 // Initliaze port map to get events of new port mappings.
-var pmap, _ = portmap.New(os.Getenv("REPO_NAME"), false, true)
+var pmap, _ = portmap.New(os.Getenv("REPO_NAME"), false)
 
 func main() {}
 

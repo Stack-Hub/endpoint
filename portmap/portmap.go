@@ -37,7 +37,6 @@ type Portmap struct {
     watcher       *fsnotify.Watcher
     event         chan *Event
     isLeader      bool
-    dynamicMap    bool
 }
 
 /*
@@ -78,11 +77,10 @@ func (m *Portmap) electLeader(blocking bool) bool {
 /*
  *  New portmap
  */
-func New(name string, electLeader bool, dynamicMap bool) (*Portmap, chan *Event) {
+func New(name string, electLeader bool) (*Portmap, chan *Event) {
     
     m := Portmap{mapfile: utils.RUNPATH + name + ".map",
-                 leaderfile: utils.RUNPATH + name + ".leader",
-                 dynamicMap: dynamicMap}
+                 leaderfile: utils.RUNPATH + name + ".leader"}
 
     // initilize members
     m.event = make(chan *Event, 10)
@@ -101,18 +99,15 @@ func New(name string, electLeader bool, dynamicMap bool) (*Portmap, chan *Event)
         }
     }
     
-    // dynamicMap: Retrive & store port mapping from file
-    if dynamicMap {
-        // Read file
-        ok := m.read()
-        if !ok {
-            return nil, nil
-        }        
-    
-        // Setup file watch
-        err := m.watch()
-        utils.Check(err)        
-    }
+    // Read file
+    ok := m.read()
+    if !ok {
+        return nil, nil
+    }        
+
+    // Setup file watch
+    err := m.watch()
+    utils.Check(err)        
     
     return &m, m.event
 }
@@ -125,10 +120,7 @@ func (m *Portmap) Add(lport string, rport string) {
     log.Debug("ADD(): before m.portmap=", m.portmap)
     m.add(lport, rport)
     log.Debug("ADD(): after m.portmap=", m.portmap)
-    
-    if m.dynamicMap {
-        m.write(lport, rport, false)
-    }
+    m.write(lport, rport, false)
 }
 
 /*
@@ -137,9 +129,7 @@ func (m *Portmap) Add(lport string, rport string) {
 func (m *Portmap) Delete(lport string) {
 
     m.delete(lport)    
-    if m.dynamicMap {
-        m.write(lport, "0", true)
-    }
+    m.write(lport, "0", true)
 }
 
 

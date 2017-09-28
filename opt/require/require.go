@@ -123,16 +123,27 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     payload, err := json.Marshal(h)
     utils.Check(err)
     fmt.Println("Connected", string(payload))
-    
-	cmd := "bash"
-    args := []string{"/var/lib/dupper/onconnect",
-                    string(payload),}
-    
-    c := exec.Command(cmd, args...)
-    c.Stdout = os.Stdout
-    c.Stderr = os.Stderr
-    err = c.Start()
-    utils.Check(err)
+
+    if _, err := os.Stat("/var/lib/dupper/onconnect"); !os.IsNotExist(err) {
+        cmd := "bash"
+        args := []string{"/var/lib/dupper/onconnect",}
+
+        c := exec.Command(cmd, args...)
+        env := os.Environ()
+        env = append(env, fmt.Sprintf("REMOTEIP=%s", h.RemoteIP))
+        env = append(env, fmt.Sprintf("REMOTEPORT=%s", fmt.Sprint(h.Config.Port)))
+        env = append(env, "LOCALIP=127.0.0.1")
+        env = append(env, fmt.Sprintf("LOCALPORT=%s", fmt.Sprint(h.ListenPort)))
+        c.Env = env
+        c.Stdout = os.Stdout
+        c.Stderr = os.Stderr
+        err = c.Start()
+        if err != nil {
+            log.Error(err)
+        }
+        
+        go c.Wait()
+    }    
     
     // If this is first connection start listening on load balanced port
     r := m.Userdata.(req)
@@ -165,16 +176,26 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     utils.Check(err)
     fmt.Println("Disconnected", string(payload))
 
-    cmd := "bash"
-    args := []string{"/var/lib/dupper/ondisconnect",
-                     string(payload),}
-    
-    c := exec.Command(cmd, args...)
-    c.Stdout = os.Stdout
-    c.Stderr = os.Stderr
-    err = c.Start()
-    utils.Check(err)
-    
+    if _, err := os.Stat("/var/lib/dupper/ondisconnect"); !os.IsNotExist(err) {
+        cmd := "bash"
+        args := []string{"/var/lib/dupper/ondisconnect",}
+
+        c := exec.Command(cmd, args...)
+        env := os.Environ()
+        env = append(env, fmt.Sprintf("REMOTEIP=%s", h.RemoteIP))
+        env = append(env, fmt.Sprintf("REMOTEPORT=%s", fmt.Sprint(h.Config.Port)))
+        env = append(env, "LOCALIP=127.0.0.1")
+        env = append(env, fmt.Sprintf("LOCALPORT=%s", fmt.Sprint(h.ListenPort)))
+        c.Env = env
+        c.Stdout = os.Stdout
+        c.Stderr = os.Stderr
+        err = c.Start()
+        if err != nil {
+            log.Error(err)
+        }
+        
+        go c.Wait()        
+    }
 }
 
 func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {

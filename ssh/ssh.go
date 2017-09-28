@@ -42,70 +42,101 @@ func Connect(u string, pass string, ip string, lport string, rport string, hash 
         }
         return ""
     }
-	// ssh open reverse tunnel
-	cmd := "sshpass"
-	args := []string{"-p", pass,
-                     "ssh",
-                     "-t", 
-                     "-o", "StrictHostkeyChecking=no", 
-                     "-o", "UserKnownHostsFile=/dev/null", 
-                     "-o", "SendEnv=SSH_RFWD", 
-                     "-o", "ExitOnForwardFailure=true",
-                     "-R", rport + ":localhost:" + lport, 
-                     u + "@" + ip, 
-                     "--",
-                     isDebug(),
-                     "{\"port\":" + lport + "}"}
-
-    log.Debug("ssh=", cmd, args)
     
-    log.Debug("Connecting ", hash)
-    
-    if rport == "0" {
-        os.Setenv("LD_PRELOAD","/usr/local/lib/rfwd.so")
-    } else {
-        os.Setenv("SSH_RFWD",rport)
-    }
+    for {
+        retry := 0
+        
+        // ssh open reverse tunnel
+        cmd := "sshpass"
+        args := []string{"-p", pass,
+                         "ssh",
+                         "-t", 
+                         "-v",
+                         "-o", "StrictHostkeyChecking=no", 
+                         "-o", "UserKnownHostsFile=/dev/null", 
+                         "-o", "SendEnv=SSH_RFWD", 
+                         "-o", "ExitOnForwardFailure=true",
+                         "-R", rport + ":localhost:" + lport, 
+                         u + "@" + ip, 
+                         "--",
+                         isDebug(),
+                         "{\"port\":" + lport + "}"}
 
-	c := exec.Command(cmd, args...)    
+        log.Debug("ssh=", cmd, args)
 
-    cmdReader, err := c.StderrPipe()
-    utils.Check(err)
+        log.Debug("Connecting ", hash)
 
-    scanner := bufio.NewScanner(cmdReader)
-    
-    c.Stdout = os.Stdout
-    err = c.Start()
-    utils.Check(err)
-
-    //Add to Client store
-    clients[hash] = c
-
-    //Remove client when disconnected
-    go wait(c, hash)
-    
-
-    if rport == "0" {    
-        var dynport int
-
-        for scanner.Scan() {
-            output := scanner.Text()
-            if strings.Contains(output, "Connection refused") {
-                break
-            }
-
-            num, _ := fmt.Sscanf(output, "Allocated port %d for remote forward", &dynport)
-            log.Debug(scanner.Text())
-            if num == 1 {
-                break
-            }
+        if rport == "0" {
+            os.Setenv("LD_PRELOAD","/usr/local/lib/rfwd.so")
+        } else {
+            os.Setenv("SSH_RFWD",rport)
         }
 
-        log.Debug("dynport=", dynport)
+        c := exec.Command(cmd, args...)    
 
-        return strconv.Itoa(dynport)
+        cmdReader, err := c.StderrPipe()
+        utils.Check(err)
+
+        scanner := bufio.NewScanner(cmdReader)
+
+        c.Stdout = os.Stdout
+        err = c.Start()
+        utils.Check(err)
+
+        //Add to Client store
+        clients[hash] = c
+
+        //Remove client when disconnected
+        go wait(c, hash)
+
+
+        if rport == "0" {
+            var dynport int
+
+            for scanner.Scan() {
+                output := scanner.Text()
+                if strings.Contains(output, "Connection refused") {
+                    break
+                }
+                
+                num, _ := fmt.Sscanf(output, "Allocated port %d for remote forward", &dynport)
+                log.Debug(scanner.Text())
+                if num == 1 {
+                    break
+                }
+            }
+
+            log.Debug("dynport=", dynport)
+
+            return strconv.Itoa(dynport)
+        } else {
+            for scanner.Scan() {
+                output := scanner.Text()
+
+                if strings.Contains(output, "Connection refused") {
+                    break
+                }
+
+                if strings.Contains(output, "Error: remote port forwarding failed for listen port") {
+                    rport = "0"
+                    retry = 1
+                    break
+                }
+
+                if strings.Contains(output, "debug1: remote forward success") {
+                    break
+                }            
+            }
+            
+            // If connection failed then retry with dynamic mapping.
+            if retry == 1 {
+                continue
+            }
+            
+        }
+        
+        break
     }
-    
     return rport
 }
 
