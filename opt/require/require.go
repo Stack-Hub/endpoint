@@ -70,10 +70,10 @@ func forEach(opts []string, cb parsecb) {
 /*
  * parse --require option
  * Formats rhost:rport             - one2one port mapping
- *         rhost:rport>lhost:lport - load balance rport to lport
+ *         rhost:rport@lhost:lport - load balance rport to lport
  */
 func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(>([a-zA-Z][a-zA-Z0-9]+):([0-9]+))?$`)
+    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(@([a-zA-Z][a-zA-Z0-9]+):([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
     
 	if len(parts) == 0 {
@@ -245,14 +245,17 @@ func handleRequest(m *omap.OMap, in net.Conn) {
                  * This allows them to directly reach the client at it's IP address.
                  */
 
-                ipAddr := getIP("eth0")
+//                ipAddr := getIP("eth0")
                 
-                log.Debug("Binding to ", ipAddr)
+//                log.Debug("Binding to ", ipAddr)
+                log.Debug("Connecting to localhost:", port)
                 
-                d := net.Dialer{LocalAddr: ipAddr}
-                out, err := d.Dial("tcp", "127.0.0.1:" + port)
+//                d := net.Dialer{LocalAddr: ipAddr}
+                out, err := net.Dial("tcp", "127.0.0.1:" + port)
                 // Connection failed, remove connection information from the list
                 if err != nil {
+                    log.Error(err)
+                    log.Debug("Connection failed removing ", el)
                     m.RemoveEl(el)
                     continue
                 }

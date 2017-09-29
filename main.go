@@ -199,6 +199,10 @@ func main() {
         interval := c.Int("interval")
         
         debug := c.Bool("D")
+        
+        // Initialize users module
+        user.Init()
+        
         // Wait for Needed service before registering.
         go require.Process(passwd, c.StringSlice("require"), func() {
 

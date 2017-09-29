@@ -45,6 +45,30 @@ func Cleanup() {
 }
 
 /*
+ * Initialize ssh keys for SSH server
+ */
+func Init() {
+	cmdName := "ssh-keygen"
+    cmdArgs := []string{"-A"}
+    
+    out, err := exec.Command(cmdName, cmdArgs...).Output()
+    if err != nil {
+        log.Error(err)
+    }
+    log.Debug(string(out))    
+
+	cmdName = "mkdir"
+    cmdArgs = []string{"-p", "/var/run/sshd"}
+    
+    out, err = exec.Command(cmdName, cmdArgs...).Output()
+    if err != nil {
+        log.Error(err)
+    }
+    log.Debug(string(out))    
+
+}
+
+/*
  * Create new user
  */
 func New(uname string, pass string) *User {
@@ -131,16 +155,57 @@ func removeConfig(path, username string) error {
       return nil
 }
 
+/*
+ * Global scope channel for ssh process go routine.
+ */
+var kill chan bool
+
 /**
  * Restart SSH Server
  */
-func restartServer() error {    
-	cmdName := "service"
-    cmdArgs := []string{"ssh", "restart"}
+func restartServer() {    
+    // Kill previous process if already running.
+    if kill != nil {
+        close(kill)    
+        log.Debug("Killing old SSHD process")        
+    }
     
-    out, err := exec.Command(cmdName, cmdArgs...).Output()
-    log.Debug(string(out))
-    return err
+    kill = make(chan bool)
+    go func(kill chan bool) {
+        for {
+            cmdName := "/usr/sbin/sshd"
+            cmdArgs := []string{"-4", "-f", "/etc/ssh/sshd_config", "-D", "-e"}
+
+            cmd := exec.Command(cmdName, cmdArgs...)
+            cmd.Stdout = os.Stdout
+            cmd.Stderr = os.Stderr
+            err := cmd.Start()
+            if err != nil {
+                log.Error(err)
+            }
+
+            terminated := make(chan error)
+            go func() {
+                terminated <- cmd.Wait()
+            }()            
+            
+            select {
+                // Encapsulating routines want this process to be killed.
+                case _, ok := <- kill:
+                if !ok {
+                    log.Debug("Requested process termination by enclosed routine.")
+                    if err := cmd.Process.Kill(); err != nil {
+                        log.Error(err)
+                    }
+                    return
+                }
+                // Process terminated prematurely, restart it.
+            case err := <-terminated:
+                    log.Debug("SSHD process terminated with ", err, ", restarting.")
+                    continue
+            }
+        }
+    }(kill)
 }
 
 /**
