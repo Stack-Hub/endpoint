@@ -56,13 +56,7 @@ func listen(fd C.int, backlog C.int) int32 {
             
             args := &register.Args{Lport: port,
                                    Rport: port,}
-            var errno int          
-            err = client.Call("RPC.Connect", args, &errno)
-            if err != nil {
-                log.Println("RPC error:", err)
-                return 107
-            }   
-
+            client.Call("RPC.Connect", args, &errno)
         
         /* Only v4 is supported for now.
         case *syscall.SockaddrInet6:
@@ -115,11 +109,7 @@ func close(fd C.int) int32 {
 
             args := &register.Args{Lport: port,
                                    Rport: port,}
-            var errno int
-            err = client.Call("RPC.Disconnect", args, &errno)
-            if err != nil {
-                log.Println("RPC error:", err)
-            }
+            client.Call("RPC.Disconnect", args, &errno)
 
         /* Only v4 is supported for now.
         case *syscall.SockaddrInet6:

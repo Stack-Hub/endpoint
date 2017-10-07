@@ -192,10 +192,7 @@ func (r Reg) connect(passwd string, debug bool) error {
  */
 func (r Reg) Connect(passwd string, interval int, debug bool) error {
 
-    if err := r.connect(passwd, debug); err != nil {
-        return err
-    }
-    
+    r.connect(passwd, debug)
     go r.reconnect(passwd, interval, debug)
     return nil
 }
@@ -216,23 +213,13 @@ func (r Reg) Disconnect() {
  *  Connect to all hosts
  */
 func (_rpc RPC) Connect(args *Args, errno *int) error {
-
-    regs := []Reg{}
     
     log.Debug("RPC Connect invoked with args=", args)
     // Start event loop for each option
     forEach(_rpc.opts, func(r *Reg) error {
         r.Lport = args.Lport
         r.Rport = args.Rport
-        if err := r.Connect(_rpc.passwd, _rpc.interval, _rpc.debug); err != nil{
-            log.Error(err)
-            for _, reg := range regs {
-                reg.Disconnect()
-            }
-            *errno = -1
-            return err
-        }
-        regs = append(regs, *r)
+        r.Connect(_rpc.passwd, _rpc.interval, _rpc.debug)
         return nil
     })    
         
