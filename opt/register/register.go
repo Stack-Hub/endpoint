@@ -11,56 +11,65 @@ import (
     "regexp"
     "errors"
     "time"
+    "net/rpc"
+    "net/http"
     
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/duppercloud/trafficrouter/ssh"
-    "github.com/duppercloud/trafficrouter/portmap"
     log "github.com/Sirupsen/logrus"
 )
 
 /*
  *  opt struct
  */
-type reg struct {
+type Reg struct {
     opt   string               //option string
-    lhost string               //local hostname
-    lport string               //local port to connect
-    rhost string               //remote host to connect to
-    rport string               //remote port to map to
+    Lhost string               //local hostname
+    Lport string               //local port to connect
+    Rhost string               //remote host to connect to
+    Rport string               //remote host port
     user string                //remote username
-    pmap *portmap.Portmap    //portmap handle
-    events chan *portmap.Event //portmap event channel
 }
 
-
 var goroutines map[string]chan bool = make(map[string]chan bool, 1)
+
+type Args struct {
+    Lport string
+    Rport string
+}
+
+type RPC struct {
+    opts []string
+    passwd   string
+    interval int
+    debug    bool
+}
+
 
 /*
  *  forEach parser callback
  */
-type parsecb func(*reg)
+type parsecb func(*Reg)
 
-/*
- *  --regiser option parser logic
- */
-func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^(.+):([0-9]+|\*)@([^:]+)(:([0-9]+))?$`)
-	parts := expr.FindStringSubmatch(str)
-	if len(parts) == 0 {
-        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport@rhost\n", str)))
-	}
-    
-    // if remote port no specified then defauls to local port. 
-    // However, if local port is * then use dynamic mapping. 
-    if len(parts[5]) == 0 {
-        if parts[2] == "*" {
-            parts[5] = "0"
-        } else {
-            parts[5] = parts[2]
+func Cleanup() {
+    for _, done := range goroutines {
+        if done != nil {
+            close(done)
         }
     }
-    
-    return parts[1], parts[2], parts[3], parts[5]
+}
+
+/*
+ *  --Regiser option parser logic
+ */
+func parse(str string) (string, string, string, string) {
+    var expr = regexp.MustCompile(`^([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+):([0-9]+))?$`)
+	parts := expr.FindStringSubmatch(str)
+	if len(parts) == 0 {
+        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport[@rhost:rport]\n", str)))
+	}
+        
+    return parts[1], parts[2], parts[4], parts[5]
 }
 
 /*
@@ -69,93 +78,45 @@ func parse(str string) (string, string, string, string) {
 func forEach(opts []string, cb parsecb) {
     for _, opt := range opts {
 
-        r := reg{opt: opt}
-        r.lhost, r.lport, r.rhost, r.rport = parse(opt)
+        r := Reg{opt: opt}
+        r.Lhost, r.Lport, r.Rhost, r.Rport = parse(opt)
 
-        if r.lport == "*" {
-            if r.rport != "0" {
-                e := fmt.Sprintf("Invalid port specification [%s]. Can't map all(*) ports to single port %d.", r.opt, r.rport)
-                utils.Check(errors.New(e))
-            }
-            r.user = r.lhost
+        if r.Lport == "*" {
+            r.user = r.Lhost
         } else {
-            r.user = r.lhost + "." + r.lport
+            r.user = r.Lhost + "." + r.Lport
         }
 
-        log.Debug("laddr=", r.lhost, ",",
-                  "lport=", r.lport, ",",
-                  "rhost=", r.rhost, ",",
-                  "rport=", r.rport, ",",
+        log.Debug("laddr=", r.Lhost, ",",
+                  "lport=", r.Lport, ",",
+                  "rhost=", r.Rhost, ",",
+                  "rport=", r.Rport, ",",
                   "ruser=", r.user)
-                
-        // Initliaze port map to get events of new port mappings.
-        r.pmap, r.events = portmap.New(r.user, true)
-        log.Debug("mapReader=", r.pmap, " event chan =", r.events)
-
         cb(&r)
     }
 }
 
 
-
-/*
- *  Connect internal to remote host and periodically check the state.
- */
-func connect(r reg, passwd string, interval int, debug bool) {
-
+func (r Reg) reconnect(passwd string, interval int, debug bool) {
     // Channel to notify when to stop this go routine
     done := make(chan bool)
-    goroutines[r.lport] = done
+    goroutines[r.Lport] = done
     
-    for {                      
-        // Check if host exists
-        ipArr, _ := net.LookupHost(r.rhost)
+    for {      
         
-        // Connect to all IP address for remote host
-        for _, ip := range ipArr {
-            hash := r.lhost + "." + r.lport + "@" + ip
-
-            // flag for skipping self connection
-            skip := false
-            
-            // Make sure to not connect to itself for container:* scenario
-            laddrs, _ := net.InterfaceAddrs()
-            for _, a := range laddrs {
-                if ip == a.String() {
-                    skip = true
-                    break
-                }
-            }
-
-            // Skip if remote IP is one of local interface ip
-            if skip {
-                continue 
-            }
-            
-            // connect to dynamic port.
-            // store assigned port in map
-            // Use the same port for rest of the connections.
-            if !ssh.IsConnected(hash) {
-                fmt.Println("Connecting...", hash)
-                mappedRport := ssh.Connect(r.user, passwd, ip, r.lport, r.rport, hash, debug)
-                log.Debug("mappedPort=", mappedRport)
-                
-                // Add this port mapping to portmap and save it.
-                if r.rport == "0" && mappedRport != "0" {
-                    r.rport = mappedRport
-                    r.pmap.Add(r.lport, r.rport)
-                    
-                }
-            }            
-        }
-
+        // Go connect, ignore errors and keep retrying
+        r.connect(passwd, debug)
+        
         // Diconnect all ssh connection if channel is closed and return.
         select {
             case _, ok := <- done:
                 log.Debug("Terminating goroutine")
                 if !ok {
+                    // Check if host exists
+                    ipArr, _ := net.LookupHost(r.Rhost)
+
                     for _, ip := range ipArr {
-                        hash := r.lhost + "." + r.lport + "@" + ip
+                        hash := r.Lhost + "." + r.Lport + "@" + ip
                         ssh.Disconnect(hash)
                     }
                     return
@@ -163,41 +124,156 @@ func connect(r reg, passwd string, interval int, debug bool) {
             case  <- time.After( time.Duration(interval) * 1000 * time.Millisecond):
             /* no-op */
         }
+    }
+}
 
-    }        
+
+/*
+ *  Connect internal to remote host and periodically check the state.
+ */
+func (r Reg) connect(passwd string, debug bool) error {
+
+    // Check if host exists
+    ipArr, err := net.LookupHost(r.Rhost)
+    if err != nil {
+        return err
+    }
+
+    // Connect to all IP address for remote host
+    for _, ip := range ipArr {
+        hash := r.Lhost + "." + r.Lport + "@" + ip
+
+        // flag for skipping self connection
+        skip := false
+
+        // Make sure to not connect to itself for container:* scenario
+        laddrs, _ := net.InterfaceAddrs()
+        for _, address := range laddrs {
+            if ipnet, ok := address.(*net.IPNet); ok {
+                if ipnet.IP.To4() != nil {
+                    if ip == ipnet.IP.String() {
+                        skip = true
+                        break
+                    }
+                }
+            }                
+        }
+
+        // Skip if remote IP is one of local interface ip
+        if skip {
+            continue 
+        }
+
+        // connect to dynamic port.
+        // store assigned port in map
+        // Use the same port for rest of the connections.
+        if !ssh.IsConnected(hash) {
+            fmt.Println("Connecting...", hash)
+            r.Rport, err = ssh.Connect(r.user, passwd, ip, r.Lport, r.Rport, hash, debug)
+            if err != nil {
+                return err
+            }
+        }            
+    }
+    
+    return nil
+}        
+
+/*
+ *  Connect to remote host and periodically check the state.
+ */
+func (r Reg) Connect(passwd string, interval int, debug bool) error {
+
+    err := r.connect(passwd, debug)
+    if err != nil {
+        go r.reconnect(passwd, interval, debug)
+    }
+    
+    return err
 }
 
 /*
  *  Connect/Disconnect changes based on portmap
  */
-func eventloop(r *reg, passwd string, interval int, debug bool) {
-    for {
-        event := <-r.events
-        if event.Type == portmap.ADDED {
-            r.lport = event.Lport
-            r.rport = event.Rport            
-            go connect(*r, passwd, interval, debug)
-        } else if event.Type == portmap.DELETED {
-            // Disconnect all connections for LPORT by closing goroutine channel.
-            close(goroutines[event.Lport])
-            delete(goroutines, event.Lport)
-        }
-    }    
+func (r Reg) Disconnect() {
+    // Disconnect all connections for LPORT by closing goroutine channel.
+    if goroutines[r.Lport] != nil {
+        close(goroutines[r.Lport])
+        delete(goroutines, r.Lport)                
+    }
 }
 
+
+/*
+ *  Connect to all hosts
+ */
+func (_rpc RPC) Connect(args *Args, errno *int) {
+
+    regs := []Reg{}
+    
+    // Start event loop for each option
+    forEach(_rpc.opts, func(r *Reg) {
+        r.Lport = args.Lport
+        r.Rport = args.Rport
+        if err := r.Connect(_rpc.passwd, _rpc.interval, _rpc.debug); err != nil{
+            log.Error(err)
+            for _, reg := range regs {
+                reg.Disconnect()
+            }
+            *errno = -1
+            return
+        }
+        regs = append(regs, *r)
+    })    
+        
+    *errno = 0
+    return
+}
+
+/*
+ *  Connect to all hosts
+ */
+func (_rpc RPC) Disconnect(args *Args, errno *int) {    
+    // Start event loop for each option
+    forEach(_rpc.opts, func(r *Reg) {
+        r.Lport = args.Lport
+        r.Rport = args.Rport
+        r.Disconnect()
+    })    
+        
+    *errno = 0
+    return
+}
 
 /*
  *  Process --regiser options
  */
 func Process(passwd string, opts []string, count int, interval int, debug bool) {
     log.Debug(opts)
+
+    // Init RPC struct and export for remote calling
+    _rpc := new(RPC)
+    _rpc.opts = opts
+    _rpc.passwd = passwd
+    _rpc.interval = interval
+    _rpc.debug = debug
+    
+    rpc.Register(_rpc)
+    rpc.HandleHTTP()
+    l, e := net.Listen("tcp", "localhost:3877")
+    if e != nil {
+        log.Error("listen error:", e)
+    }
+    go http.Serve(l, nil)    
+    
     
     // Start event loop for each option
-    forEach(opts, func(r *reg) {    
-        go eventloop(r, passwd, interval, debug)
-        
-        if r.lport != "*" {
-            r.pmap.Add(r.lport, r.rport)
+    forEach(opts, func(r *Reg) {            
+        if r.Lport != "*" {
+            if err := r.Connect(passwd, interval, debug); err != nil{
+                log.Error(err)
+            }
         }
     })      
+    
 }

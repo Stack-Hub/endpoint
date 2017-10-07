@@ -3,7 +3,7 @@
  * Proprietary and confidential
  * Written by Ashish Thakwani <athakwani@gmail.com>, August 2017
  */
-package server
+package monitor
 
 import (
     "testing"

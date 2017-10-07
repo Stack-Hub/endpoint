@@ -27,15 +27,17 @@ import (
  */
 func cleanup() {    
     log.Debug("Cleaning up")
+    register.Cleanup()
+    require.Cleanup()
     config.Cleanup()
-    server.Cleanup()
+    monitor.Cleanup()
     user.Cleanup()
 }
 
 /*
  *  Install Signal handler for proper cleanup.
  */
-func installHandler() {
+func installHandler() {    
     sigs := make(chan os.Signal, 1)    
     signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
     go func() {
@@ -44,6 +46,7 @@ func installHandler() {
         cleanup()
         os.Exit(1)
     }()    
+
 }
 
 /*
@@ -200,27 +203,75 @@ func main() {
         
         debug := c.Bool("D")
         
-        // Initialize users module
-        user.Init()
+        for {        
+            // Flag for go routing
+            done := make(chan bool, 1)
+            
+            // Initialize users module
+            user.Init()
+
+            // Wait for Needed service before registering.
+            go require.Process(passwd, c.StringSlice("require"), func() {
+
+                // Register services.
+                register.Process(passwd, c.StringSlice("register"), count, interval, debug)
+
+                for {
+                    cmdargs := c.Args()
+                    if len(cmdargs) > 0 {
+                        cmd := cmdargs[0]
+                        args := cmdargs[1:]
+                        log.Debug("Executing ", cmd, args)
+                        proc := exec.Command(cmd, args...)
+
+                        port := os.Getenv("SRVPORT")
+                        log.Debug("SRVPORT=", port)
+                        if port == "*" {
+                            env := os.Environ()
+                            env = append(env, "LD_PRELOAD=/usr/local/lib/listener.so")
+                            proc.Env = env
+                            log.Debug("env=", proc.Env)
+                        }
+
+                        proc.Stdout = os.Stdout
+                        proc.Stderr = os.Stderr
+                        err := proc.Start()
+                        if err != nil {
+                            log.Error(err)
+                            os.Exit(1)
+                        }
+
+                        restart := make(chan os.Signal, 1)
+                        signal.Notify(restart, syscall.SIGUSR1)
+
+                        select {
+                            // Restart on SIGUSR1
+                            case sig := <-restart:
+                                log.Debug(sig, " Restarting")
+                                proc.Process.Kill()
+                                continue
+                            
+                            case <-done:
+                                log.Debug("Terminaing process")
+                                proc.Process.Kill()
+                        }
+                    }
+                    
+                    break
+                }
+
+            })   
+
+            reboot := make(chan os.Signal, 1)
+            signal.Notify(reboot, syscall.SIGUSR2)
+
+            // Reboot on SIGUSR2
+            sig := <-reboot
+            done <- true
+            log.Debug(sig, " Rebooting.")
+            cleanup()
+        }
         
-        // Wait for Needed service before registering.
-        go require.Process(passwd, c.StringSlice("require"), func() {
-
-            // Register services.
-            register.Process(passwd, c.StringSlice("register"), count, interval, debug)
-
-            cmdargs := c.Args()
-            if len(cmdargs) > 0 {
-                cmd := cmdargs[0]
-                args := cmdargs[1:]
-                log.Debug("Executing ", cmd, args)
-                proc := exec.Command(cmd, args...)
-                proc.Stdout = os.Stdout
-                proc.Stderr = os.Stderr
-                proc.Run()
-            }
-        })    
-
         utils.BlockForever()
         return nil        
     }

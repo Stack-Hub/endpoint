@@ -42,6 +42,10 @@ type callback func()
 var cbTicker int = 0
 var asyncCB callback = nil 
 
+func Cleanup() {
+    cbTicker = 0
+}
+
 /*
  * forEach parser callback
  */
@@ -73,11 +77,11 @@ func forEach(opts []string, cb parsecb) {
  *         rhost:rport@lhost:lport - load balance rport to lport
  */
 func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(@([a-zA-Z][a-zA-Z0-9]+):([0-9]+))?$`)
+    var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(@([a-zA-Z][a-zA-Z0-9]+|\*):([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
     
 	if len(parts) == 0 {
-        utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport[>lhost:lport]\n", str)))
+        utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport[@lhost:lport]\n", str)))
 	}
         
     return parts[1], parts[2], parts[4], parts[5]
@@ -88,17 +92,22 @@ func parse(str string) (string, string, string, string) {
 * Get interface IP address
  */
 func getIP(iface string) (*net.IPAddr) {
-    
+
     ip := []byte{127,0,0,1}
-    
-    ief, err := net.InterfaceByName(iface)
-    
-    if err == nil {
-        addrs, err := ief.Addrs()
+
+    if iface == "*" {
+        ip = []byte{0,0,0,0}
+    } else if len(iface) > 0 {
+        ief, err := net.InterfaceByName(iface)
+
         if err == nil {
-            ip = addrs[0].(*net.IPNet).IP        
-        }
+            addrs, err := ief.Addrs()
+            if err == nil {
+                ip = addrs[0].(*net.IPNet).IP        
+            }
+        }                
     }
+    
 
     ipAddr := &net.IPAddr{
         IP: ip,
@@ -114,7 +123,8 @@ func getIP(iface string) (*net.IPAddr) {
 func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 
     // If this is first connection then decrement callback ticker
-    if m.Len() == 0 {
+    r := m.Userdata.(req)
+    if m.Len() == 0 && r.rport != "*" {
         cbTicker--
     }
     
@@ -146,7 +156,6 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     }    
     
     // If this is first connection start listening on load balanced port
-    r := m.Userdata.(req)
     if len(r.lhost) > 0 && m.Len() == 1 && r.lb == nil {
         r.lb = listen(m, r.lhost, r.lport)
         m.Userdata = r
@@ -278,13 +287,6 @@ func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
             
     forEach(opts, func(r req) {
-
-        //Store callback for later invocation
-        if cb != nil {
-            asyncCB = cb
-            cb = nil            
-        }
-
         //Create User
         u := user.New(r.user, passwd)
         log.Debug("user=", u)
@@ -292,15 +294,24 @@ func Process(passwd string, opts []string,  cb callback) {
         // Initialize Ordered map and server events.
         m := omap.New()   
         m.Userdata = r
-
-        // Increment callback ticker.
-        cbTicker++
+        
+        //All port forwarding is treated as soft dependency.
+        if r.rport != "*" {
+            // Increment callback ticker.
+            cbTicker++                        
+        }
 
         // Monitor unix listening socker based on uname
-        go server.Monitor(m, r.user, ConnAddEv, ConnRemoveEv)
+        go monitor.Monitor(m, r.user, ConnAddEv, ConnRemoveEv)
 
     })
 
+    //Store callback for later invocation
+    if cb != nil && cbTicker > 0 {
+        asyncCB = cb
+        cb = nil            
+    } 
+    
     // If options are non-zero then don't invoke callback now.
     // AsyncCB will be invoked when all the services connects.
     if cb != nil {

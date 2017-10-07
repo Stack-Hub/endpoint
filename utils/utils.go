@@ -120,3 +120,11 @@ func UnlockFile(f *os.File) error {
     f.Close()
     return err
 }
+
+/*
+ * Delete File
+ */
+func DeleteFile(filename string) error {
+    err := os.Remove(filename)
+    return err
+}

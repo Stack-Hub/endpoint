@@ -12,6 +12,7 @@ import (
     "bufio"
     "strconv"
     "strings"
+    "errors"
     
     "github.com/duppercloud/trafficrouter/utils"
     log "github.com/Sirupsen/logrus"
@@ -23,7 +24,7 @@ import (
 var clients map[string]*exec.Cmd = make(map[string]*exec.Cmd, 1)
 
 /*
- * Wait fo client to disconnect
+ * Wait for client to disconnect
  */
 func wait(cmd *exec.Cmd, hash string){
     cmd.Wait()
@@ -34,7 +35,7 @@ func wait(cmd *exec.Cmd, hash string){
 /*
  * SSH client connect
  */
-func Connect(u string, pass string, ip string, lport string, rport string, hash string, debug bool) (string) {
+func Connect(u string, pass string, ip string, lport string, rport string, hash string, debug bool) (string, error) {
 
     isDebug := func() string {
         if debug == true {
@@ -43,101 +44,86 @@ func Connect(u string, pass string, ip string, lport string, rport string, hash 
         return ""
     }
     
-    for {
-        retry := 0
-        
-        // ssh open reverse tunnel
-        cmd := "sshpass"
-        args := []string{"-p", pass,
-                         "ssh",
-                         "-t", 
-                         "-v",
-                         "-o", "StrictHostkeyChecking=no", 
-                         "-o", "UserKnownHostsFile=/dev/null", 
-                         "-o", "SendEnv=SSH_RFWD", 
-                         "-o", "ExitOnForwardFailure=true",
-                         "-R", rport + ":localhost:" + lport, 
-                         u + "@" + ip, 
-                         "--",
-                         isDebug(),
-                         "{\"port\":" + lport + "}"}
+    // ssh open reverse tunnel
+    cmd := "sshpass"
+    args := []string{"-p", pass,
+                     "ssh",
+                     "-t", 
+                     "-v",
+                     "-o", "StrictHostkeyChecking=no", 
+                     "-o", "UserKnownHostsFile=/dev/null", 
+                     "-o", "SendEnv=SSH_RFWD", 
+                     "-o", "ExitOnForwardFailure=true",
+                     "-R", rport + ":127.0.0.1:" + lport, 
+                     u + "@" + ip, 
+                     "--",
+                     isDebug(),
+                     "{\"port\":" + lport + "}"}
 
-        log.Debug("ssh=", cmd, args)
+    log.Debug("ssh=", cmd, args)
 
-        log.Debug("Connecting ", hash)
+    log.Debug("Connecting ", hash)
 
-        if rport == "0" {
-            os.Setenv("LD_PRELOAD","/usr/local/lib/rfwd.so")
-        } else {
-            os.Setenv("SSH_RFWD",rport)
-        }
-
-        c := exec.Command(cmd, args...)    
-
-        cmdReader, err := c.StderrPipe()
-        utils.Check(err)
-
-        scanner := bufio.NewScanner(cmdReader)
-
-        c.Stdout = os.Stdout
-        err = c.Start()
-        utils.Check(err)
-
-        //Add to Client store
-        clients[hash] = c
-
-        //Remove client when disconnected
-        go wait(c, hash)
-
-
-        if rport == "0" {
-            var dynport int
-
-            for scanner.Scan() {
-                output := scanner.Text()
-                if strings.Contains(output, "Connection refused") {
-                    break
-                }
-                
-                num, _ := fmt.Sscanf(output, "Allocated port %d for remote forward", &dynport)
-                log.Debug(scanner.Text())
-                if num == 1 {
-                    break
-                }
-            }
-
-            log.Debug("dynport=", dynport)
-
-            return strconv.Itoa(dynport)
-        } else {
-            for scanner.Scan() {
-                output := scanner.Text()
-
-                if strings.Contains(output, "Connection refused") {
-                    break
-                }
-
-                if strings.Contains(output, "Error: remote port forwarding failed for listen port") {
-                    rport = "0"
-                    retry = 1
-                    break
-                }
-
-                if strings.Contains(output, "debug1: remote forward success") {
-                    break
-                }            
-            }
-            
-            // If connection failed then retry with dynamic mapping.
-            if retry == 1 {
-                continue
-            }
-            
-        }
-        
-        break
+    if rport == "0" {
+        os.Setenv("LD_PRELOAD","/usr/local/lib/rfwd.so")
+    } else {
+        os.Setenv("SSH_RFWD",rport)
     }
-    return rport
+
+    c := exec.Command(cmd, args...)    
+
+    cmdReader, err := c.StderrPipe()
+    utils.Check(err)
+
+    scanner := bufio.NewScanner(cmdReader)
+
+    c.Stdout = os.Stdout
+    err = c.Start()
+    utils.Check(err)
+
+    //Add to Client store
+    clients[hash] = c
+
+    //Remove client when disconnected
+    go wait(c, hash)
+
+
+    if rport == "0" {
+        var dynport int
+
+        for scanner.Scan() {
+            output := scanner.Text()
+            if strings.Contains(output, "Connection refused") {
+                return "", errors.New(output)
+            }
+
+            num, _ := fmt.Sscanf(output, "Allocated port %d for remote forward", &dynport)
+            log.Debug(scanner.Text())
+            if num == 1 {
+                log.Debug("dynport=", dynport)
+                return strconv.Itoa(dynport), nil
+            }
+        }
+
+    } else {
+        for scanner.Scan() {
+            output := scanner.Text()
+
+            if strings.Contains(output, "Connection refused") {
+                return "", errors.New(output)
+            }
+
+            if strings.Contains(output, "Error: remote port forwarding failed for listen port") {
+                return "", errors.New(output)
+            }
+
+            if strings.Contains(output, "debug1: remote forward success") {
+                return rport, nil
+            }            
+        }            
+    }
+    
+    return rport, nil
 }
 
 /*

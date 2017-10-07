@@ -10,16 +10,13 @@ import (
     "os"
     "syscall"
     "strconv"
-    "fmt"
+    "log"
 
-    "github.com/duppercloud/trafficrouter/portmap"
+    "github.com/duppercloud/trafficrouter/register"
     "github.com/rainycape/dl"
 )
 
 // go build -buildmode=c-shared -o listener.so listener.go
-
-// Initliaze port map to get events of new port mappings.
-var pmap, _ = portmap.New(os.Getenv("REPO_NAME"), false)
 
 func main() {}
 
@@ -28,7 +25,7 @@ func listen(fd C.int, backlog C.int) int32 {
     
     lib, err := dl.Open("libc", 0)
     if err != nil {
-        fmt.Println("Error opening libc", err)
+        log.Println("Error opening libc", err)
         return 0
     }
     defer lib.Close()
@@ -38,18 +35,37 @@ func listen(fd C.int, backlog C.int) int32 {
 
     sock, err := syscall.Getsockname(int(fd))
     if (err != nil) {
-        fmt.Println("Error getting socket name", err)
+        log.Println("Error getting socket name", err)
         return reallisten(fd, backlog)        
     }
     
     switch sock.(type) {
         case *syscall.SockaddrInet4:
-            pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet4).Port), "0")
+            port := strconv.Itoa(sock.(*syscall.SockaddrInet4).Port)
+            client, err := rpc.DialHTTP("tcp", "localhost:3877")
+            if err != nil {
+                log.Error("dialing:", err)
+                return 107
+            }            
 
+            args := &register.Args{Lport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),
+                                   Rport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),}
+            var errno int
+            err = client.Call("RPC.Connect", args, &errno)
+            if err != nil {
+                log.Error("RPC error:", err)
+                return 107
+            }
+
+            if errno < 0 {
+                return 107
+            }
+            
+        
         /* Only v4 is supported for now.
         case *syscall.SockaddrInet6:
             pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet6).Port), "0")
-            fmt.Println("Litening detected on ", strconv.Itoa(sock.(*syscall.SockaddrInet6).Port))
+            log.Println("Litening detected on ", strconv.Itoa(sock.(*syscall.SockaddrInet6).Port))
         */
     }
 
@@ -85,12 +101,18 @@ func close(fd C.int) int32 {
     
     switch sock.(type) {
         case *syscall.SockaddrInet4:
-            pmap.Delete(strconv.Itoa(sock.(*syscall.SockaddrInet4).Port))
+            args := &register.Args{Lport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),
+                                   Rport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),}
+            var errno int
+            err = client.Call("RPC.Disconnect", args, &errno)
+            if err != nil {
+                log.Error("RPC error:", err)
+            }
 
         /* Only v4 is supported for now.
         case *syscall.SockaddrInet6:
             pmap.Add(strconv.Itoa(sock.(*syscall.SockaddrInet6).Port), "0")
-            fmt.Println("Litening detected on ", strconv.Itoa(sock.(*syscall.SockaddrInet6).Port))
+            log.Println("Litening detected on ", strconv.Itoa(sock.(*syscall.SockaddrInet6).Port))
         */
     }
 

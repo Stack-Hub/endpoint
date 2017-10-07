@@ -33,72 +33,33 @@ type Event struct {
 type Portmap struct {
     portmap       map[string]string 
     mapfile       string
-    leaderfile    string
     watcher       *fsnotify.Watcher
     event         chan *Event
-    isLeader      bool
 }
 
-/*
- *  Check if this reader is the leader
- */
-func (m *Portmap) IsLeader() bool {
-    return m.isLeader
-}
+var portmaps []Portmap
 
-/*
- *  Compete for leadership by obtaining exclusive lock on leader file.
- */
-func (m *Portmap) electLeader(blocking bool) bool {
-
-    // Check if election is over?
-    // Set mode flags to either blocking or non-blocking
-    mode := utils.LOCK_EX 
-    
-    if !blocking {
-        mode |= utils.LOCK_NB
+func Cleanup() {
+    for _, m := range portmaps {
+        m.Close()
     }
-
-    // Acquire lock on leader file
-    _, err := utils.LockFile(m.leaderfile, false, mode)
-    if err == nil {
-        log.Debug("elecLeader(): Leadership Acquired")
-        return true
-    } 
-
-    return false
-        
-    /* Don't unlock, because that will make other process leader as well.
-     * Only when this process is killed the lock will be released and 
-     * other processes will get a chance to become leader.
-     */
 }
 
 /*
  *  New portmap
  */
-func New(name string, electLeader bool) (*Portmap, chan *Event) {
+func New(name string) (*Portmap, chan *Event) {
     
-    m := Portmap{mapfile: utils.RUNPATH + name + ".map",
-                 leaderfile: utils.RUNPATH + name + ".leader"}
+    m := Portmap{mapfile: utils.RUNPATH + name + ".map"}
 
+    portmaps = append(portmaps, m)
+    
     // initilize members
     m.event = make(chan *Event, 10)
     m.portmap = make(map[string]string, 1)
     
-    log.Debug("m.mapfile=", m.mapfile)
-        
-    // Elect leader by acquiring lock on leader file
-    // if failed then start async blocking call 
-    if electLeader {
-        m.isLeader = m.electLeader(false)
-        if !m.isLeader {
-            go func() {
-                m.isLeader = m.electLeader(true)
-            }()
-        }
-    }
-    
+    //log.Debug("m.mapfile=", m.mapfile)
+            
     // Read file
     ok := m.read()
     if !ok {
@@ -117,9 +78,9 @@ func New(name string, electLeader bool) (*Portmap, chan *Event) {
  */
 func (m *Portmap) Add(lport string, rport string) {
 
-    log.Debug("ADD(): before m.portmap=", m.portmap)
+    //log.Debug("ADD(): before m.portmap=", m.portmap)
     m.add(lport, rport)
-    log.Debug("ADD(): after m.portmap=", m.portmap)
+    //log.Debug("ADD(): after m.portmap=", m.portmap)
     m.write(lport, rport, false)
 }
 
@@ -150,8 +111,8 @@ func (m *Portmap) watch() error {
 	go func() {
 		for {
             select {
-            case ev := <-m.watcher.Events:
-                log.Debug("Recieved watcher event ", ev)
+            case <-m.watcher.Events:
+                //log.Debug("Recieved watcher event ", ev)
                 m.read()
                 
 			case err := <-m.watcher.Errors:
@@ -193,11 +154,11 @@ func (m *Portmap) read() bool {
 
     // Init empty map
     if data == nil {
-        log.Debug("read(): Initializing empty map")
+        //log.Debug("read(): Initializing empty map")
         data = make(map [string]string, 1)
     }
 
-    log.Debug("Read(): ", string(bytes))
+    //log.Debug("Read(): ", string(bytes))
 
     m.update(data)        
     
@@ -212,8 +173,8 @@ func (m *Portmap) update(data map[string]string) {
     // For missing entries from port map generate DELETED event
     // DELETE event takes precedance over ADDED because 
     // if the new entry's rport maps to any new entry, then we should remove old entry first.
-    for k, v := range m.portmap {
-        log.Debug("Checking ", k, ":", v, " for DELETED event")
+    for k, _ := range m.portmap {
+        //log.Debug("Checking ", k, ":", v, " for DELETED event")
         if _, ok := data[k]; !ok {
             m.delete(k)
         }
@@ -221,7 +182,7 @@ func (m *Portmap) update(data map[string]string) {
 
     // Add/update all new entries
     for k, v := range data {
-        log.Debug("Adding ", k, ":", v)
+        //log.Debug("Adding ", k, ":", v)
         m.add(k, v)
     } 
 }
@@ -264,8 +225,7 @@ func (m * Portmap) write(lport string, rport string, isDelete bool) bool {
             // Add port mapping
             data[lport] = rport            
         }
-    } else
-    {
+    } else {
         delete(data, lport)
     }
     
@@ -276,7 +236,7 @@ func (m * Portmap) write(lport string, rport string, isDelete bool) bool {
         return false
     }
 
-    log.Debug("write(): portmap = ", string(jsonp))
+    //log.Debug("write(): portmap = ", string(jsonp))
 
     //Empty file first
     file.Truncate(0)
@@ -292,7 +252,7 @@ func (m * Portmap) write(lport string, rport string, isDelete bool) bool {
 }
 
 func (m *Portmap) dispatch(ev int, k string, v string) {
-    log.Debug("Dispatching ", ev," event for ", k, ":", v)
+    //log.Debug("Dispatching ", ev," event for ", k, ":", v)
     m.event <- &Event{Lport: k, Rport: v, Type: ev}    
 }
 
@@ -300,21 +260,9 @@ func (m *Portmap) dispatch(ev int, k string, v string) {
  *  Add port entry
  */
 func (m *Portmap) add(lport string, rport string) {
-
-    // Skip adding incomplete mapping for non leader
-    if !m.isLeader && rport == "0" {
-        return
-    }
-    
     var event = ADDED
     
-    if mport, ok := m.portmap[lport]; ok {
-        
-        // Skip Overwriting if mapping already exists.
-        if rport == "0" || rport == mport {
-            return
-        }
-
+    if _, ok := m.portmap[lport]; ok {
         event = UPDATED    
     }
     
@@ -335,6 +283,7 @@ func (m *Portmap) delete(lport string) {
  */
 func (m *Portmap) Close() {
     /* Stop watching */
-	m.watcher.Close()    
+	m.watcher.Close()
+    utils.DeleteFile(m.mapfile)
 }
 
