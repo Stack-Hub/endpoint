@@ -45,18 +45,19 @@ func listen(fd C.int, backlog C.int) int32 {
             port := strconv.Itoa(sock.(*syscall.SockaddrInet4).Port)
             client, err := rpc.DialHTTP("tcp", "localhost:3877")
             if err != nil {
-                log.Error("dialing:", err)
+                log.Println("dialing:", err)
                 return 107
             }            
-
-            args := &register.Args{Lport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),
-                                   Rport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),}
-            var errno int
+            
+            args := &register.Args{Lport: port,
+                                   Rport: port,}
+            var errno int          
             err = client.Call("RPC.Connect", args, &errno)
             if err != nil {
-                log.Error("RPC error:", err)
+                log.Println("RPC error:", err)
                 return 107
-            }
+            }   
+
         
         /* Only v4 is supported for now.
         case *syscall.SockaddrInet6:
@@ -97,12 +98,19 @@ func close(fd C.int) int32 {
     
     switch sock.(type) {
         case *syscall.SockaddrInet4:
-            args := &register.Args{Lport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),
-                                   Rport: strconv.Itoa(sock.(*syscall.SockaddrInet4).Port),}
+            port := strconv.Itoa(sock.(*syscall.SockaddrInet4).Port)
+            client, err := rpc.DialHTTP("tcp", "localhost:3877")
+            if err != nil {
+                log.Println("dialing:", err)
+                return realclose(fd)
+            }
+
+            args := &register.Args{Lport: port,
+                                   Rport: port,}
             var errno int
             err = client.Call("RPC.Disconnect", args, &errno)
             if err != nil {
-                log.Error("RPC error:", err)
+                log.Println("RPC error:", err)
             }
 
         /* Only v4 is supported for now.
