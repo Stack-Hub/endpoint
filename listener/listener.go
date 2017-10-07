@@ -12,7 +12,7 @@ import (
     "strconv"
     "log"
 
-    "github.com/duppercloud/trafficrouter/register"
+    "github.com/duppercloud/trafficrouter/opt/register"
     "github.com/rainycape/dl"
 )
 
