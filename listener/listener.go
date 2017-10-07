@@ -21,7 +21,7 @@ import (
 
 func main() {}
 
-var client rpc.Client
+var client *rpc.Client
 
 //export listen
 func listen(fd C.int, backlog C.int) int32 {
