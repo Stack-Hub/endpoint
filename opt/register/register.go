@@ -192,12 +192,12 @@ func (r Reg) connect(passwd string, debug bool) error {
  */
 func (r Reg) Connect(passwd string, interval int, debug bool) error {
 
-    err := r.connect(passwd, debug)
-    if err != nil {
-        go r.reconnect(passwd, interval, debug)
+    if err := r.connect(passwd, debug); err != nil {
+        return err
     }
     
-    return err
+    go r.reconnect(passwd, interval, debug)
+    return nil
 }
 
 /*
