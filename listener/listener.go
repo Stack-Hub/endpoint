@@ -11,7 +11,8 @@ import (
     "syscall"
     "strconv"
     "log"
-
+    "net/rpc"
+    
     "github.com/duppercloud/trafficrouter/opt/register"
     "github.com/rainycape/dl"
 )
@@ -56,11 +57,6 @@ func listen(fd C.int, backlog C.int) int32 {
                 log.Error("RPC error:", err)
                 return 107
             }
-
-            if errno < 0 {
-                return 107
-            }
-            
         
         /* Only v4 is supported for now.
         case *syscall.SockaddrInet6:

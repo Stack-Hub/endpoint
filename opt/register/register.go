@@ -49,7 +49,7 @@ type RPC struct {
 /*
  *  forEach parser callback
  */
-type parsecb func(*Reg)
+type parsecb func(*Reg) error
 
 func Cleanup() {
     for _, done := range goroutines {
@@ -63,19 +63,23 @@ func Cleanup() {
  *  --Regiser option parser logic
  */
 func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`^([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+):([0-9]+))?$`)
+    var expr = regexp.MustCompile(`([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+)(:([0-9]+))?)?$`)
 	parts := expr.FindStringSubmatch(str)
 	if len(parts) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport[@rhost:rport]\n", str)))
 	}
-        
-    return parts[1], parts[2], parts[4], parts[5]
+    
+    if parts[6] == "" {
+        parts[6] = parts[2]
+    }
+    
+    return parts[1], parts[2], parts[4], parts[6]
 }
 
 /*
  *  -regiser options iterater
  */
-func forEach(opts []string, cb parsecb) {
+func forEach(opts []string, cb parsecb) error {
     for _, opt := range opts {
 
         r := Reg{opt: opt}
@@ -92,8 +96,12 @@ func forEach(opts []string, cb parsecb) {
                   "rhost=", r.Rhost, ",",
                   "rport=", r.Rport, ",",
                   "ruser=", r.user)
-        cb(&r)
+        
+        if err := cb(&r); err != nil {
+            return err
+        }
     }
+    return nil
 }
 
 
@@ -207,12 +215,13 @@ func (r Reg) Disconnect() {
 /*
  *  Connect to all hosts
  */
-func (_rpc RPC) Connect(args *Args, errno *int) {
+func (_rpc RPC) Connect(args *Args, errno *int) error {
 
     regs := []Reg{}
     
+    log.Debug("RPC Connect invoked with args=", args)
     // Start event loop for each option
-    forEach(_rpc.opts, func(r *Reg) {
+    forEach(_rpc.opts, func(r *Reg) error {
         r.Lport = args.Lport
         r.Rport = args.Rport
         if err := r.Connect(_rpc.passwd, _rpc.interval, _rpc.debug); err != nil{
@@ -221,28 +230,31 @@ func (_rpc RPC) Connect(args *Args, errno *int) {
                 reg.Disconnect()
             }
             *errno = -1
-            return
+            return err
         }
         regs = append(regs, *r)
+        return nil
     })    
         
     *errno = 0
-    return
+    return nil
 }
 
 /*
  *  Connect to all hosts
  */
-func (_rpc RPC) Disconnect(args *Args, errno *int) {    
+func (_rpc RPC) Disconnect(args *Args, errno *int) error {    
+    log.Debug("RPC Disconnect invoked with args=", args)
     // Start event loop for each option
-    forEach(_rpc.opts, func(r *Reg) {
+    forEach(_rpc.opts, func(r *Reg) error {
         r.Lport = args.Lport
         r.Rport = args.Rport
         r.Disconnect()
+        return nil
     })    
         
     *errno = 0
-    return
+    return nil
 }
 
 /*
@@ -268,12 +280,13 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
     
     
     // Start event loop for each option
-    forEach(opts, func(r *Reg) {            
+    forEach(opts, func(r *Reg) error {            
         if r.Lport != "*" {
             if err := r.Connect(passwd, interval, debug); err != nil{
                 log.Error(err)
             }
         }
+        return nil
     })      
     
 }
