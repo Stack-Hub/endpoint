@@ -44,6 +44,9 @@ func Connect(u string, pass string, ip string, lport string, rport string, hash 
         return ""
     }
     
+    instance := os.Getenv("INSTANCE")
+    label := os.Getenv("LABEL")
+    bind := "127.128.0." + instance
     // ssh open reverse tunnel
     cmd := "sshpass"
     args := []string{"-p", pass,
@@ -54,11 +57,13 @@ func Connect(u string, pass string, ip string, lport string, rport string, hash 
                      "-o", "UserKnownHostsFile=/dev/null", 
                      "-o", "SendEnv=SSH_RFWD", 
                      "-o", "ExitOnForwardFailure=true",
-                     "-R", rport + ":127.0.0.1:" + lport, 
+                     "-R", bind + ":" + rport + ":" + bind + ":" + lport, 
                      u + "@" + ip, 
                      "--",
                      isDebug(),
-                     "{\"port\":" + lport + "}"}
+                     "{\"port\":" + lport + "," + 
+                     "\"instance\":" + instance + "," +
+                     "\"label\":\"" + label + "\"" + "}"}
 
     log.Debug("ssh=", cmd, args)
 

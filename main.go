@@ -19,6 +19,7 @@ import (
     "github.com/duppercloud/trafficrouter/opt/register"
     "github.com/duppercloud/trafficrouter/version"
     log "github.com/Sirupsen/logrus"
+//    reaper "github.com/ramr/go-reaper"
     "github.com/urfave/cli"
 )
     
@@ -34,15 +35,27 @@ func cleanup() {
     user.Cleanup()
 }
 
+
 /*
  *  Install Signal handler for proper cleanup.
  */
 func installHandler() {    
     sigs := make(chan os.Signal, 1)    
-    signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+    signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
     go func() {
         sig := <-sigs
         log.Debug(sig)
+        pgid, _ := syscall.Getpgid(syscall.Getpid())
+        switch sig {
+            case syscall.SIGHUP:
+                syscall.Kill(-pgid, syscall.SIGHUP)
+            case syscall.SIGTERM:
+                syscall.Kill(-pgid, syscall.SIGTERM)
+            case syscall.SIGINT:
+                syscall.Kill(-pgid, syscall.SIGINT)
+            case syscall.SIGQUIT:
+                syscall.Kill(-pgid, syscall.SIGQUIT)
+        }
         cleanup()
         os.Exit(1)
     }()    
@@ -114,6 +127,11 @@ func main() {
      * Install Signal handlers for proper cleanup.
      */
     installHandler()
+    
+    /*
+     * Start zombie reaper in background
+     */
+    //go reaper.Reap()
     
     /*
      * Global error handling.
@@ -210,12 +228,12 @@ func main() {
             // Initialize users module
             user.Init()
 
+            // Register services.
+            register.Process(passwd, c.StringSlice("register"), count, interval, debug)
+        
             // Wait for Needed service before registering.
-            go require.Process(passwd, c.StringSlice("require"), func() {
-
-                // Register services.
-                register.Process(passwd, c.StringSlice("register"), count, interval, debug)
-
+            go require.Process(passwd, c.StringSlice("require"), func() {                
+                
                 for {
                     cmdargs := c.Args()
                     if len(cmdargs) > 0 {
@@ -223,9 +241,10 @@ func main() {
                         args := cmdargs[1:]
                         log.Debug("Executing ", cmd, args)
                         proc := exec.Command(cmd, args...)
+                        proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-                        port := os.Getenv("SRVPORT")
-                        log.Debug("SRVPORT=", port)
+                        port := os.Getenv("PORT")
+                        log.Debug("PORT=", port)
                         if port == "*" {
                             env := os.Environ()
                             env = append(env, "LD_PRELOAD=/usr/local/lib/listener.so")
@@ -248,12 +267,12 @@ func main() {
                             // Restart on SIGUSR1
                             case sig := <-restart:
                                 log.Debug(sig, " Restarting")
-                                proc.Process.Kill()
+                                syscall.Kill(-proc.Process.Pid, syscall.SIGKILL)
                                 continue
                             
                             case <-done:
                                 log.Debug("Terminaing process")
-                                proc.Process.Kill()
+                                syscall.Kill(-proc.Process.Pid, syscall.SIGKILL)
                         }
                     }
                     

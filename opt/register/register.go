@@ -23,12 +23,13 @@ import (
  *  opt struct
  */
 type Reg struct {
-    opt   string               //option string
-    Lhost string               //local hostname
-    Lport string               //local port to connect
-    Rhost string               //remote host to connect to
-    Rport string               //remote host port
-    user string                //remote username
+    opt        string               //option string
+    lhost      string               //local hostname
+    lport      string               //local port to connect
+    operator   string               //port function operator
+    rhost      string               //remote host to connect to
+    rport      string               //remote host port
+    user       string                //remote username
 }
 
 var goroutines map[string]chan bool = make(map[string]chan bool, 1)
@@ -62,18 +63,15 @@ func Cleanup() {
 /*
  *  --Regiser option parser logic
  */
-func parse(str string) (string, string, string, string) {
-    var expr = regexp.MustCompile(`([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+)(:([0-9]+))?)?$`)
+func parse(str string) (string, string, string) {
+    var expr = regexp.MustCompile(`([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+))?$`)
 	parts := expr.FindStringSubmatch(str)
-	if len(parts) == 0 {
+
+    if len(parts) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport[@rhost:rport]\n", str)))
 	}
-    
-    if parts[6] == "" {
-        parts[6] = parts[2]
-    }
-    
-    return parts[1], parts[2], parts[4], parts[6]
+        
+    return parts[1], parts[2], parts[4]
 }
 
 /*
@@ -83,18 +81,20 @@ func forEach(opts []string, cb parsecb) error {
     for _, opt := range opts {
 
         r := Reg{opt: opt}
-        r.Lhost, r.Lport, r.Rhost, r.Rport = parse(opt)
+        r.lhost, r.lport, r.rhost = parse(opt)
+        r.rport = r.lport
 
-        if r.Lport == "*" {
-            r.user = r.Lhost
-        } else {
-            r.user = r.Lhost + "." + r.Lport
+        if r.lport == "*" {
+            r.user = r.lhost
+        } else {            
+            r.user = r.lhost + "." + r.lport
         }
 
-        log.Debug("laddr=", r.Lhost, ",",
-                  "lport=", r.Lport, ",",
-                  "rhost=", r.Rhost, ",",
-                  "rport=", r.Rport, ",",
+        
+        log.Debug("lhost=", r.lhost, ",",
+                  "lport=", r.lport, ",",
+                  "rhost=", r.rhost, ",",
+                  "rport=", r.rport, ",",
                   "ruser=", r.user)
         
         if err := cb(&r); err != nil {
@@ -108,7 +108,7 @@ func forEach(opts []string, cb parsecb) error {
 func (r Reg) reconnect(passwd string, interval int, debug bool) {
     // Channel to notify when to stop this go routine
     done := make(chan bool)
-    goroutines[r.Lport] = done
+    goroutines[r.lport] = done
     
     for {      
         
@@ -121,10 +121,10 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
                 log.Debug("Terminating goroutine")
                 if !ok {
                     // Check if host exists
-                    ipArr, _ := net.LookupHost(r.Rhost)
+                    ipArr, _ := net.LookupHost(r.rhost)
 
                     for _, ip := range ipArr {
-                        hash := r.Lhost + "." + r.Lport + "@" + ip
+                        hash := r.lhost + "." + r.lport + "@" + ip
                         ssh.Disconnect(hash)
                     }
                     return
@@ -142,14 +142,14 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
 func (r Reg) connect(passwd string, debug bool) error {
 
     // Check if host exists
-    ipArr, err := net.LookupHost(r.Rhost)
+    ipArr, err := net.LookupHost(r.rhost)
     if err != nil {
         return err
     }
 
     // Connect to all IP address for remote host
     for _, ip := range ipArr {
-        hash := r.Lhost + "." + r.Lport + "@" + ip
+        hash := r.lhost + "." + r.lport + "@" + ip
 
         // flag for skipping self connection
         skip := false
@@ -177,7 +177,7 @@ func (r Reg) connect(passwd string, debug bool) error {
         // Use the same port for rest of the connections.
         if !ssh.IsConnected(hash) {
             fmt.Println("Connecting...", hash)
-            r.Rport, err = ssh.Connect(r.user, passwd, ip, r.Lport, r.Rport, hash, debug)
+            r.rport, err = ssh.Connect(r.user, passwd, ip, r.lport, r.rport, hash, debug)
             if err != nil {
                 return err
             }
@@ -201,10 +201,10 @@ func (r Reg) Connect(passwd string, interval int, debug bool) error {
  *  Connect/Disconnect changes based on portmap
  */
 func (r Reg) Disconnect() {
-    // Disconnect all connections for LPORT by closing goroutine channel.
-    if goroutines[r.Lport] != nil {
-        close(goroutines[r.Lport])
-        delete(goroutines, r.Lport)                
+    // Disconnect all connections for lport by closing goroutine channel.
+    if goroutines[r.lport] != nil {
+        close(goroutines[r.lport])
+        delete(goroutines, r.lport)                
     }
 }
 
@@ -217,8 +217,8 @@ func (_rpc RPC) Connect(args *Args, errno *int) error {
     log.Debug("RPC Connect invoked with args=", args)
     // Start event loop for each option
     forEach(_rpc.opts, func(r *Reg) error {
-        r.Lport = args.Lport
-        r.Rport = args.Rport
+        r.lport = args.Lport
+        r.rport = args.Rport
         r.Connect(_rpc.passwd, _rpc.interval, _rpc.debug)
         return nil
     })    
@@ -234,8 +234,8 @@ func (_rpc RPC) Disconnect(args *Args, errno *int) error {
     log.Debug("RPC Disconnect invoked with args=", args)
     // Start event loop for each option
     forEach(_rpc.opts, func(r *Reg) error {
-        r.Lport = args.Lport
-        r.Rport = args.Rport
+        r.lport = args.Lport
+        r.rport = args.Rport
         r.Disconnect()
         return nil
     })    
@@ -267,8 +267,8 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
     
     
     // Start event loop for each option
-    forEach(opts, func(r *Reg) error {            
-        if r.Lport != "*" {
+    forEach(opts, func(r *Reg) error {        
+        if r.lport != "*" {
             if err := r.Connect(passwd, interval, debug); err != nil{
                 log.Error(err)
             }

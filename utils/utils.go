@@ -9,7 +9,10 @@ import (
     "fmt"
     "os"
     "syscall"
-    
+    "os/exec"
+    "net"
+
+    log "github.com/Sirupsen/logrus"
     "golang.org/x/sys/unix"
 )
 
@@ -29,6 +32,7 @@ Match User %s
     AllowAgentForwarding no
     PermitTTY yes
     AcceptEnv SSH_RFWD
+    GatewayPorts clientspecified
     ForceCommand /usr/local/bin/trafficrouter -f $SSH_ORIGINAL_COMMAND
 `
 )
@@ -38,7 +42,9 @@ Match User %s
  *  Config Struct is passed from client to server
  */
 type Config struct {
-    Port uint32 `json:"port"`
+    Port     uint32 `json:"port"`
+    Instance uint32 `json:"instance"`
+    Label    string `json:"label"`
 }
 
 /*
@@ -127,4 +133,84 @@ func UnlockFile(f *os.File) error {
 func DeleteFile(filename string) error {
     err := os.Remove(filename)
     return err
+}
+
+/*
+* Get interface IP address
+ */
+func GetIP(iface string) (*net.IPAddr) {
+
+    ip := []byte{127,0,0,1}
+
+    if iface == "*" {
+        ip = []byte{0,0,0,0}
+    } else if len(iface) > 0 {
+        ief, err := net.InterfaceByName(iface)
+
+        if err == nil {
+            addrs, err := ief.Addrs()
+            if err == nil {
+                ip = addrs[0].(*net.IPNet).IP        
+            }
+        }                
+    }
+    
+
+    ipAddr := &net.IPAddr{
+        IP: ip,
+    }    
+    
+    return ipAddr
+}
+
+/*
+ * Execute on-connect code
+ */
+func OnConnect(rhost string, rport string, lhost string, lport string, instance string, label string) {
+    if _, err := os.Stat("/var/lib/dupper/onconnect"); !os.IsNotExist(err) {
+        cmd := "bash"
+        args := []string{"/var/lib/dupper/onconnect",}
+
+        c := exec.Command(cmd, args...)
+        env := os.Environ()
+        env = append(env, fmt.Sprintf("INSTANCE=%s", instance))
+        env = append(env, fmt.Sprintf("LABEL=%s", label))
+        env = append(env, fmt.Sprintf("REMOTEHOST=%s", rhost))
+        env = append(env, fmt.Sprintf("REMOTEPORT=%s", rport))
+        env = append(env, fmt.Sprintf("LOCALHOST=%s", lhost))
+        env = append(env, fmt.Sprintf("LOCALPORT=%s", lport))
+        c.Env = env
+        c.Stdout = os.Stdout
+        c.Stderr = os.Stderr
+        err = c.Run()
+        if err != nil {
+            log.Error(err)
+        }
+    }        
+}
+
+/*
+ * Execute on-disconnect code
+ */
+func OnDisconnect(rhost string, rport string, lhost string, lport string, instance string, label string) {
+    if _, err := os.Stat("/var/lib/dupper/ondisconnect"); !os.IsNotExist(err) {
+        cmd := "bash"
+        args := []string{"/var/lib/dupper/ondisconnect",}
+
+        c := exec.Command(cmd, args...)
+        env := os.Environ()
+        env = append(env, fmt.Sprintf("INSTANCE=%s", instance))
+        env = append(env, fmt.Sprintf("LABEL=%s", label))
+        env = append(env, fmt.Sprintf("REMOTEHOST=%s", rhost))
+        env = append(env, fmt.Sprintf("REMOTEPORT=%s", rport))
+        env = append(env, fmt.Sprintf("LOCALHOST=%s", lhost))
+        env = append(env, fmt.Sprintf("LOCALPORT=%s", lport))
+        c.Env = env
+        c.Stdout = os.Stdout
+        c.Stderr = os.Stderr
+        err = c.Run()
+        if err != nil {
+            log.Error(err)
+        }
+    }
 }

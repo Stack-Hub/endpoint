@@ -9,8 +9,6 @@ import (
     "fmt"
     "net"
     "io"
-    "os"
-    "os/exec"
     "strconv"
     "regexp"
     "errors"
@@ -30,20 +28,22 @@ type req struct {
     opt   string               //option string
     lhost string               //local hostname
     lport string               //local port to connect
-    rhost string               //remote host to connect to
+    count int
+    rhost string               //remote host that connects
     rport string               //remote port to map to
     user  string               //username
     lb    *net.Listener        //Listener socket for load balancer
 }
 
-type parsecb func(req)
+type parsecb func(*req)
 type callback func()
 
-var cbTicker int = 0
+var done bool = false
 var asyncCB callback = nil 
+var reqs []req
 
 func Cleanup() {
-    cbTicker = 0
+    done = false
 }
 
 /*
@@ -51,9 +51,10 @@ func Cleanup() {
  */
 func forEach(opts []string, cb parsecb) {
 
+    // Prepare and store all require option in global context.
     for _, opt := range opts {
         var r req
-        r.rhost, r.rport, r.lhost, r.lport = parse(opt)
+        r.rhost, r.rport, r.count, r.lhost, r.lport = parse(opt)
 
         r.user = r.rhost
         log.Debug("r.user=", r.user)
@@ -64,10 +65,15 @@ func forEach(opts []string, cb parsecb) {
         
         log.Debug("raddr=", r.rhost, ",",
                   "rport=", r.rport, ",",
+                  "count=", r.count, ",",
                   "laddr=", r.lhost, ",",
                   "lport=", r.lport)
-        
-        cb(r)
+        reqs = append(reqs, r)
+    }
+    
+    // Trigger callback for each require option.
+    for idx, _ := range reqs {
+        cb(&reqs[idx])
     }
 }
 
@@ -76,44 +82,21 @@ func forEach(opts []string, cb parsecb) {
  * Formats rhost:rport             - one2one port mapping
  *         rhost:rport@lhost:lport - load balance rport to lport
  */
-func parse(str string) (string, string, string, string) {
+func parse(str string) (string, string, int, string, string) {
     var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(@([a-zA-Z][a-zA-Z0-9]+|\*):([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
     
 	if len(parts) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport[@lhost:lport]\n", str)))
 	}
+    
+    count := 1
+    
+    if parts[2] == "*" {
+        count = 0    
+    } 
         
-    return parts[1], parts[2], parts[4], parts[5]
-}
-
-
-/*
-* Get interface IP address
- */
-func getIP(iface string) (*net.IPAddr) {
-
-    ip := []byte{127,0,0,1}
-
-    if iface == "*" {
-        ip = []byte{0,0,0,0}
-    } else if len(iface) > 0 {
-        ief, err := net.InterfaceByName(iface)
-
-        if err == nil {
-            addrs, err := ief.Addrs()
-            if err == nil {
-                ip = addrs[0].(*net.IPNet).IP        
-            }
-        }                
-    }
-    
-
-    ipAddr := &net.IPAddr{
-        IP: ip,
-    }    
-    
-    return ipAddr
+    return parts[1], parts[2], count, parts[4], parts[5]
 }
 
 /*
@@ -123,9 +106,10 @@ func getIP(iface string) (*net.IPAddr) {
 func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 
     // If this is first connection then decrement callback ticker
-    r := m.Userdata.(req)
-    if m.Len() == 0 && r.rport != "*" {
-        cbTicker--
+    r := m.Userdata.(*req)
+    if r.count > 0 {
+        r.count--
+        log.Debug("r=", r)
     }
     
     m.Add(p, h)
@@ -134,45 +118,36 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     utils.Check(err)
     fmt.Println("Connected", string(payload))
 
-    if _, err := os.Stat("/var/lib/dupper/onconnect"); !os.IsNotExist(err) {
-        cmd := "bash"
-        args := []string{"/var/lib/dupper/onconnect",}
-
-        c := exec.Command(cmd, args...)
-        env := os.Environ()
-        env = append(env, fmt.Sprintf("REMOTEIP=%s", h.RemoteIP))
-        env = append(env, fmt.Sprintf("REMOTEPORT=%s", fmt.Sprint(h.Config.Port)))
-        env = append(env, "LOCALIP=127.0.0.1")
-        env = append(env, fmt.Sprintf("LOCALPORT=%s", fmt.Sprint(h.ListenPort)))
-        c.Env = env
-        c.Stdout = os.Stdout
-        c.Stderr = os.Stderr
-        err = c.Start()
-        if err != nil {
-            log.Error(err)
-        }
-        
-        go c.Wait()
-    }    
+    // trigger on-connect code block
+    utils.OnConnect(h.RemoteIP, 
+                    fmt.Sprint(h.Config.Port), 
+                    "127.128.0." + fmt.Sprint(h.Config.Instance), 
+                    fmt.Sprint(h.ListenPort), 
+                    fmt.Sprint(h.Config.Instance),
+                    fmt.Sprint(h.Config.Label))
     
     // If this is first connection start listening on load balanced port
     if len(r.lhost) > 0 && m.Len() == 1 && r.lb == nil {
         r.lb = listen(m, r.lhost, r.lport)
-        m.Userdata = r
     }
     
-    // All required connections are established
-    // inform the caller with async callback and 
-    // unset cbTicker.
-    if cbTicker == 0 {
-        cbTicker = -1
-        log.Debug("cbTicker =", cbTicker)
-        log.Debug(asyncCB)
-        if asyncCB != nil {
-            asyncCB()
+    log.Debug("done=", done)
+    // If asyncCB is not triggered check if all requirements are met.
+    if !done {
+        // Return if not all required connections are established
+        for _, r := range reqs {
+            log.Debug("checking r=", r)
+            if r.count > 0 {
+                return
+            }
         }
+
+        // Trigger callback because all required connections are established.
+        if asyncCB != nil {
+            done = true
+            asyncCB()
+        }        
     }
-    
 }
 
 /*
@@ -185,31 +160,19 @@ func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
     utils.Check(err)
     fmt.Println("Disconnected", string(payload))
 
-    if _, err := os.Stat("/var/lib/dupper/ondisconnect"); !os.IsNotExist(err) {
-        cmd := "bash"
-        args := []string{"/var/lib/dupper/ondisconnect",}
+    // trigger on-connect code block
+    utils.OnDisconnect(h.RemoteIP, 
+                       fmt.Sprint(h.Config.Port), 
+                       "127.0.0.1", 
+                       fmt.Sprint(h.ListenPort), 
+                       fmt.Sprint(h.Config.Instance), 
+                       fmt.Sprint(h.Config.Label))
 
-        c := exec.Command(cmd, args...)
-        env := os.Environ()
-        env = append(env, fmt.Sprintf("REMOTEIP=%s", h.RemoteIP))
-        env = append(env, fmt.Sprintf("REMOTEPORT=%s", fmt.Sprint(h.Config.Port)))
-        env = append(env, "LOCALIP=127.0.0.1")
-        env = append(env, fmt.Sprintf("LOCALPORT=%s", fmt.Sprint(h.ListenPort)))
-        c.Env = env
-        c.Stdout = os.Stdout
-        c.Stderr = os.Stderr
-        err = c.Start()
-        if err != nil {
-            log.Error(err)
-        }
-        
-        go c.Wait()        
-    }
 }
 
 func listen(m *omap.OMap, lhost string, lport string) (*net.Listener) {
 
-    ipAddr := getIP(lhost)
+    ipAddr := utils.GetIP(lhost)
 
     addr := fmt.Sprintf("%s:%s", ipAddr.String(), lport)
     log.Debug("addr=", addr)
@@ -247,19 +210,7 @@ func handleRequest(m *omap.OMap, in net.Conn) {
             if h != nil {
                 port := strconv.Itoa(int(h.ListenPort))
 
-                /*
-                 * Bind to eth0 IP address.
-                 * This is crucial for self discovery.
-                 * Some servers connects back to client at specific ports.
-                 * This allows them to directly reach the client at it's IP address.
-                 */
-
-//                ipAddr := getIP("eth0")
-                
-//                log.Debug("Binding to ", ipAddr)
                 log.Debug("Connecting to localhost:", port)
-                
-//                d := net.Dialer{LocalAddr: ipAddr}
                 out, err := net.Dial("tcp", "127.0.0.1:" + port)
                 // Connection failed, remove connection information from the list
                 if err != nil {
@@ -286,7 +237,7 @@ func handleRequest(m *omap.OMap, in net.Conn) {
 func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
             
-    forEach(opts, func(r req) {
+    forEach(opts, func(r *req) {
         //Create User
         u := user.New(r.user, passwd)
         log.Debug("user=", u)
@@ -294,23 +245,16 @@ func Process(passwd string, opts []string,  cb callback) {
         // Initialize Ordered map and server events.
         m := omap.New()   
         m.Userdata = r
-        
-        //All port forwarding is treated as soft dependency.
-        if r.rport != "*" {
-            // Increment callback ticker.
-            cbTicker++                        
-        }
-
+                
         // Monitor unix listening socker based on uname
         go monitor.Monitor(m, r.user, ConnAddEv, ConnRemoveEv)
 
+        //Store callback for later invocation
+        if cb != nil {
+            asyncCB = cb
+            cb = nil            
+        } 
     })
-
-    //Store callback for later invocation
-    if cb != nil && cbTicker > 0 {
-        asyncCB = cb
-        cb = nil            
-    } 
     
     // If options are non-zero then don't invoke callback now.
     // AsyncCB will be invoked when all the services connects.
