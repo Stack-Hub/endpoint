@@ -9,7 +9,6 @@ import (
     "C"
     "os"
     "syscall"
-    "strconv"
     "log"
     "net/rpc"
     
@@ -56,6 +55,7 @@ func listen(fd C.int, backlog C.int) int32 {
             
             args := &register.Args{Lport: port,
                                    Rport: port,}
+            int errno
             client.Call("RPC.Connect", args, &errno)
         
         /* Only v4 is supported for now.
@@ -109,6 +109,7 @@ func close(fd C.int) int32 {
 
             args := &register.Args{Lport: port,
                                    Rport: port,}
+            int errno
             client.Call("RPC.Disconnect", args, &errno)
 
         /* Only v4 is supported for now.
