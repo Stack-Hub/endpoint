@@ -45,7 +45,7 @@ func listen(fd C.int, backlog C.int) int32 {
     switch sock.(type) {
         case *syscall.SockaddrInet4:
             var err error
-            port := strconv.Itoa(sock.(*syscall.SockaddrInet4).Port)
+            port := uint32(sock.(*syscall.SockaddrInet4).Port)
             if client == nil {
                 client, err = rpc.DialHTTP("tcp", "localhost:3877")
                 if err != nil {
@@ -98,7 +98,7 @@ func close(fd C.int) int32 {
     switch sock.(type) {
         case *syscall.SockaddrInet4:
             var err error
-            port := strconv.Itoa(sock.(*syscall.SockaddrInet4).Port)
+            port := uint32(sock.(*syscall.SockaddrInet4).Port)
             if client == nil {
                 client, err = rpc.DialHTTP("tcp", "localhost:3877")
                 if err != nil {

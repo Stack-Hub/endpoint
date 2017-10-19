@@ -13,9 +13,10 @@ import (
     "time"
     "net/rpc"
     "net/http"
+    "strconv"
     
     "github.com/duppercloud/trafficrouter/utils"
-    "github.com/duppercloud/trafficrouter/ssh"
+    "github.com/duppercloud/trafficrouter/client"
     log "github.com/Sirupsen/logrus"
 )
 
@@ -25,18 +26,18 @@ import (
 type Reg struct {
     opt        string               //option string
     lhost      string               //local hostname
-    lport      string               //local port to connect
+    lport      uint32               //local port to connect
     operator   string               //port function operator
     rhost      string               //remote host to connect to
-    rport      string               //remote host port
+    rport      uint32               //remote host port
     user       string                //remote username
 }
 
-var goroutines map[string]chan bool = make(map[string]chan bool, 1)
+var goroutines map[uint32]chan bool = make(map[uint32]chan bool, 1)
 
 type Args struct {
-    Lport string
-    Rport string
+    Lport uint32
+    Rport uint32
 }
 
 type RPC struct {
@@ -63,15 +64,24 @@ func Cleanup() {
 /*
  *  --Regiser option parser logic
  */
-func parse(str string) (string, string, string) {
+func parse(str string) (string, uint32, string) {
     var expr = regexp.MustCompile(`([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+))?$`)
 	parts := expr.FindStringSubmatch(str)
 
     if len(parts) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport[@rhost:rport]\n", str)))
 	}
-        
-    return parts[1], parts[2], parts[4]
+    
+    if parts[2] == "*" {
+        parts[2] = "0"
+    }
+    
+    lport, err := strconv.Atoi(parts[2])
+    if err != nil {
+        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport[@rhost:rport]\n", str)))
+    }
+    
+    return parts[1], uint32(lport), parts[4]
 }
 
 /*
@@ -84,10 +94,10 @@ func forEach(opts []string, cb parsecb) error {
         r.lhost, r.lport, r.rhost = parse(opt)
         r.rport = r.lport
 
-        if r.lport == "*" {
+        if r.lport == 0 {
             r.user = r.lhost
         } else {            
-            r.user = r.lhost + "." + r.lport
+            r.user = r.lhost + "." + fmt.Sprint(r.lport)
         }
 
         
@@ -124,8 +134,8 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
                     ipArr, _ := net.LookupHost(r.rhost)
 
                     for _, ip := range ipArr {
-                        hash := r.lhost + "." + r.lport + "@" + ip
-                        ssh.Disconnect(hash)
+                        hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip
+                        client.Disconnect(hash)
                     }
                     return
                 }
@@ -149,7 +159,7 @@ func (r Reg) connect(passwd string, debug bool) error {
 
     // Connect to all IP address for remote host
     for _, ip := range ipArr {
-        hash := r.lhost + "." + r.lport + "@" + ip
+        hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip
 
         // flag for skipping self connection
         skip := false
@@ -175,9 +185,9 @@ func (r Reg) connect(passwd string, debug bool) error {
         // connect to dynamic port.
         // store assigned port in map
         // Use the same port for rest of the connections.
-        if !ssh.IsConnected(hash) {
+        if !client.IsConnected(hash) {
             fmt.Println("Connecting...", hash)
-            r.rport, err = ssh.Connect(r.user, passwd, ip, r.lport, r.rport, hash, debug)
+            r.rport, err = client.Connect(r.user, passwd, ip, r.lport, r.rport, hash, debug)
             if err != nil {
                 return err
             }
@@ -268,7 +278,7 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
     
     // Start event loop for each option
     forEach(opts, func(r *Reg) error {        
-        if r.lport != "*" {
+        if r.lport != 0 {
             if err := r.Connect(passwd, interval, debug); err != nil{
                 log.Error(err)
             }

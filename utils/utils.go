@@ -11,6 +11,9 @@ import (
     "syscall"
     "os/exec"
     "net"
+    "strconv"
+    "io"
+    "sync"
 
     log "github.com/Sirupsen/logrus"
     "golang.org/x/sys/unix"
@@ -116,6 +119,24 @@ func LockFile(filename string, truncate bool, how int) (*os.File, error) {
     return f, nil
 }
 
+/* 
+ * CopyReadWriters copies biderectionally - output from a to b, and output of b into a. 
+ * Calls the close function when unable to copy in either direction
+ */
+func CopyReadWriters(a, b io.ReadWriter, close func()) {
+	var once sync.Once
+	go func() {
+		io.Copy(a, b)
+		once.Do(close)
+	}()
+
+	go func() {
+		io.Copy(b, a)
+		once.Do(close)
+	}()
+}
+
+
 /*
  * Unlock file to unblock server
  */
@@ -134,6 +155,33 @@ func DeleteFile(filename string) error {
     err := os.Remove(filename)
     return err
 }
+
+/* 
+ * Extract port from Address
+ */
+func GetHostPort(addr net.Addr) (host string, port int, err error) {
+	host, portString, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return
+	}
+	port, err = strconv.Atoi(portString)
+	return
+}
+
+/* 
+ * Build TCPAddr from host & port
+ */
+func ParseTCPAddr(addr string, port uint32) (*net.TCPAddr, error) {
+	if port == 0 || port > 65535 {
+		return nil, fmt.Errorf("ssh: port number out of range: %d", port)
+	}
+	ip := net.ParseIP(string(addr))
+	if ip == nil {
+		return nil, fmt.Errorf("ssh: cannot parse IP address %q", addr)
+	}
+	return &net.TCPAddr{IP: ip, Port: int(port)}, nil
+}
+
 
 /*
 * Get interface IP address

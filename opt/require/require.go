@@ -15,8 +15,7 @@ import (
     "encoding/json"
     
     "github.com/duppercloud/trafficrouter/omap"
-    "github.com/duppercloud/trafficrouter/user"
-    "github.com/duppercloud/trafficrouter/monitor"
+    "github.com/duppercloud/trafficrouter/server"
     "github.com/duppercloud/trafficrouter/utils"
     log "github.com/Sirupsen/logrus"
 )
@@ -103,7 +102,7 @@ func parse(str string) (string, string, int, string, string) {
  * Connection added evant callback
  * When all services connect, invoke async callback
  */
-func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
+func ConnAddEv(m *omap.OMap, h *utils.Host) {
 
     // If this is first connection then decrement callback ticker
     r := m.Userdata.(*req)
@@ -112,7 +111,7 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
         log.Debug("r=", r)
     }
     
-    m.Add(p, h)
+    m.Add(h.Config.Instance, h)
     
     payload, err := json.Marshal(h)
     utils.Check(err)
@@ -153,8 +152,8 @@ func ConnAddEv(m *omap.OMap, uname string, p int, h *utils.Host) {
 /*
  * Connection removed callback
  */
-func ConnRemoveEv(m *omap.OMap, uname string, p int, h *utils.Host) {
-    m.Remove(p)
+func ConnRemoveEv(m *omap.OMap, h *utils.Host) {
+    m.Remove(h.Config.Instance)
 
     payload, err := json.Marshal(h)
     utils.Check(err)
@@ -236,18 +235,17 @@ func handleRequest(m *omap.OMap, in net.Conn) {
  */
 func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
-            
+    
+    // Start SSH Server
+    server.Listen()
+    
     forEach(opts, func(r *req) {
-        //Create User
-        u := user.New(r.user, passwd)
-        log.Debug("user=", u)
-
         // Initialize Ordered map and server events.
         m := omap.New()   
         m.Userdata = r
                 
-        // Monitor unix listening socker based on uname
-        go monitor.Monitor(m, r.user, ConnAddEv, ConnRemoveEv)
+        // Add user to ssh server
+        go server.AddUser(r.user, m, ConnAddEv, ConnRemoveEv)
 
         //Store callback for later invocation
         if cb != nil {
