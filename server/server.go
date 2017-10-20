@@ -8,17 +8,18 @@ package server
 import (
 	"fmt"
     "net"
-    "log"
     "os"
     "crypto/rsa" 
     "crypto/rand" 
-    "encoding/pem" 
+    "encoding/pem"
+    "encoding/binary"
     "crypto/x509" 
 
 	"golang.org/x/crypto/ssh"
+    "dev.justinjudd.org/justin/easyssh"
     "github.com/duppercloud/trafficrouter/omap"
     "github.com/duppercloud/trafficrouter/utils"
-//    log "github.com/Sirupsen/logrus"
+    log "github.com/Sirupsen/logrus"
 )
 
 type Callback func(*omap.OMap, *utils.Host)
@@ -28,6 +29,20 @@ const (
 	ForwardedTCPReturnRequest  = "forwarded-tcpip"      
 	CancelRemoteForwardRequest = "cancel-tcpip-forward" 
 )
+
+// tcpipForward is structure for RFC 4254 7.1 "tcpip-forward" request
+type tcpipForward struct {
+	Host string
+	Port uint32
+}
+
+// directForward is struxture for RFC 4254 7.2 - can be used for "forwarded-tcpip" and "direct-tcpip"
+type directForward struct {
+	Host1 string
+	Port1 uint32
+	Host2 string
+	Port2 uint32
+}
 
 /*
  * User record
@@ -42,43 +57,7 @@ type user struct {
 /*
  * User DB
  */
-var userDB map[string]user
-
-/*
- * tcpipForward is structure for RFC 4254 7.1 "tcpip-forward" request
- */
-type tcpipForward struct {
-	Host   string
-	Port   uint32
-    Instance uint32 
-    Label    string 
-}
-
-/*
- * tcpipForwardResponse is structure for RFC 4254 7.1 "tcpip-forward" response
- */
-type tcpipForwardResponse struct {
-    Port uint32
-    Host string
-}
-
-/* 
- * directForward is struxture for RFC 4254 7.2 - can be used for "forwarded-tcpip" and "direct-tcpip" 
- */
-type directForward struct {
-	Host1 string
-	Port1 uint32
-	Host2 string
-	Port2 uint32
-}
-
-/* 
- * SSH Connection to external clients
- */
-type RemoteForward struct {
-    Metadata tcpipForward
-    channel ssh.Channel
-}
+var userDB map[string]user = make(map[string]user, 1)
 
 /*
  * MakeSSHKeyPair make a pair of public and private keys for SSH access.
@@ -103,157 +82,111 @@ func MakeSSHKeyPair() ([]byte, []byte, error) {
     return privateKeyPEM, ssh.MarshalAuthorizedKey(pub), nil
 }
 
-/*
- * Reject all channel Request with Prohibited error
- */
-func ProhibitChannels(chans <-chan ssh.NewChannel) {
-    for ch := range chans {
-            ch.Reject(ssh.Prohibited, "")
-    }
-}
 
-/*
- * Open reverse channel on SSH and forward data.
- */
-func ReverseChannel(conn net.Conn, sshConn *ssh.ServerConn) error { 
-    p := directForward{}
-    var err error
+// TCPIPForwardRequest fulfills RFC 4254 7.1 "tcpip-forward" request
+//
+// TODO: Need to add state to handle "cancel-tcpip-forward"
+func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 
-    var portnum int
-    p.Host1, portnum, err = utils.GetHostPort(conn.LocalAddr())
-    if err != nil {
-        return err
-    }    
-    p.Port1 = uint32(portnum)
+	t := tcpipForward{}
+	reply := (t.Port == 0) && req.WantReply
+	ssh.Unmarshal(req.Payload, &t)
+	addr := fmt.Sprintf("%s:%d", t.Host, t.Port)
+	ln, err := net.Listen("tcp", addr) //tie to the client connection
 
-    p.Host2, portnum, err = utils.GetHostPort(conn.RemoteAddr())
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		log.Println("Unable to listen on address: ", addr)
+		return
+	}
+	log.Println("Listening on address: ", ln.Addr().String())
 
-    p.Port2 = uint32(portnum)
+	quit := make(chan bool)
 
-    fmt.Println(p)
-    ch, reqs, err := sshConn.OpenChannel(ForwardedTCPReturnRequest, ssh.Marshal(p))
-    if err != nil {
-        log.Println("Open forwarded Channel: ", err.Error())
-        return err
-    }
-    go ssh.DiscardRequests(reqs)
+	if reply { // Client sent port 0. let them know which port is actually being used
 
-    close := func() {
-        ch.Close()
-        conn.Close()
-    }
+		_, port, err := utils.GetHostPort(ln.Addr())
+		if err != nil {
+			return
+		}
 
-    utils.CopyReadWriters(conn, ch, close)
-    return nil
-}
+		b := make([]byte, 4)
+		binary.BigEndian.PutUint32(b, uint32(port))
+		t.Port = uint32(port)
+		req.Reply(true, b)
+	} else {
+		req.Reply(true, nil)
+	}
 
-/*
- * Handle incoming connections on this new listener
- */
-func ForwardConnections(ln net.Listener, sshConn *ssh.ServerConn, done chan bool) {     
-    for {
-        conn, err := ln.Accept()
-        if err != nil { // Unable to accept new connection - listener likely closed
-            fmt.Println("Listener Closed asynchronously", err)
-            return
-        }
-
-        go ReverseChannel(conn, sshConn)
-    }
-}
-
-
-/*
- * Handle incoming Remote Forward requests
- */
-func HandleRemoteForwardRequest(req *ssh.Request, sshConn *ssh.ServerConn, done chan bool, u *user) error {
-    t := tcpipForward{}
-
-    ssh.Unmarshal(req.Payload, &t)
-    addr := fmt.Sprintf("%s:%d", t.Host, t.Port)
-    ln, err := net.Listen("tcp", addr) //tie to the client connection
-
-    if err != nil {
-        log.Println("Unable to listen on address: ", addr)
-        return err
-    }
-    
-    log.Println("Listening on address: ", ln.Addr().String())
-
-    _, port, err := utils.GetHostPort(ln.Addr())
-    if err != nil {
-        return err
-    }
-
-    // Send reply for 'tcpip-forward' request
-    res := tcpipForwardResponse{}
-    res.Port = uint32(port)
-    res.Host = os.Getenv("BINDADDR")
-    req.Reply(true, ssh.Marshal(res))
-
+    u := userDB[sshConn.User()]
     h := &utils.Host{}
-    h.ListenPort = res.Port
+    h.ListenPort = t.Port
     h.RemoteIP = t.Host
     h.RemotePort = t.Port
-    h.Config.Label = t.Label
-    h.Config.Instance = t.Instance
     h.Config.Port = t.Port
+
+    go u.ccb(u.m, h)    
     
-    u.ccb(u.m, h)
+	go func() { // Handle incoming connections on this new listener
+		for {
+			select {
+			case <-quit:
+
+				return
+			default:
+				conn, err := ln.Accept()
+				if err != nil { // Unable to accept new connection - listener likely closed
+					continue
+				}
+
+                log.Println("RemoteServer: New Connection: ", conn.RemoteAddr(), "-->", conn.LocalAddr() )
+
+                go func(conn net.Conn) {
+					p := directForward{}
+					var err error
+
+					var portnum int
+					p.Host1 = t.Host
+					p.Port1 = t.Port
+					p.Host2, portnum, err = utils.GetHostPort(conn.RemoteAddr())
+					if err != nil {
+                        fmt.Println(err)
+						return
+					}
+
+                    p.Host2 = os.Getenv("BINDADDR")
+
+					p.Port2 = uint32(portnum)
+					ch, reqs, err := sshConn.OpenChannel(ForwardedTCPReturnRequest, ssh.Marshal(p))
+					if err != nil {
+						log.Println("Open forwarded Channel: ", err.Error())
+						return
+					}
+					go ssh.DiscardRequests(reqs)
+					go func(ch ssh.Channel, conn net.Conn) {
+
+						close := func() {
+							ch.Close()
+							conn.Close()
+
+							log.Printf("forwarding closed")
+						}
+
+						go utils.CopyReadWriters(conn, ch, close)
+
+					}(ch, conn)
+
+				}(conn)
+			}
+
+		}
+
+	}()
     
-    go func() {
-       select {
-        case <-done:
-            u.dcb(u.m, h)
-           ln.Close()
-        } 
-    }()
-    
-    ForwardConnections(ln, sshConn, done)
-
-    return nil 
-}
-
-/*
- * Handle incoming requests
- */
-func HandleRequets(in <-chan *ssh.Request, sshConn *ssh.ServerConn, done chan bool, u *user) {        
-    for req := range in {
-        switch req.Type {
-            case RemoteForwardRequest:
-                go HandleRemoteForwardRequest(req, sshConn, done, u)
-            case CancelRemoteForwardRequest:
-                done <- true
-                req.Reply(true, nil)
-            default:
-                req.Reply(false, nil)
-        }
-    }    
-}
-
-func HandleClient(nConn net.Conn, config *ssh.ServerConfig) {
-    // Before use, a handshake must be performed on the incoming
-    // net.Conn.
-    sshConn, chans, reqs, err := ssh.NewServerConn(nConn, config)
-    if err != nil {
-        log.Fatal("failed to handshake: ", err)
-    }
-
-    // Send Reject with Prohibited error to all channels.
-    go ProhibitChannels(chans)
-
-    user := userDB[sshConn.Permissions.Extensions["user"]]
-    done := make(chan bool)
-
-    // Handle Requests
-    go HandleRequets(reqs, sshConn, done, &user)
-
     sshConn.Wait()
-    done <- true
-    fmt.Println("Stop forwarding/listening")                    
+    log.Println("Stop forwarding/listening on ", ln.Addr())
+    ln.Close()
+    quit <- true        
+
 }
 
 func Listen() (error) {
@@ -261,6 +194,7 @@ func Listen() (error) {
     // Handle Authentication
     config := &ssh.ServerConfig{
         PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+            log.Debug("C.User()=", c.User(), "Users=", userDB)
             if u, ok := userDB[c.User()]; ok && string(pass) == "123456789" {
                 return &ssh.Permissions{Extensions: map[string]string{"user": u.user}}, nil
             }
@@ -272,26 +206,18 @@ func Listen() (error) {
 
     private, err := ssh.ParsePrivateKey(priv)
     if err != nil {
-        log.Fatal("Failed to parse private key: ", err)
+        log.Error("Failed to parse private key: ", err)
     }
 
     config.AddHostKey(private)
         
-    // Listen & Accept connections
-    listener, err := net.Listen("tcp", "0.0.0.0:22")
-    if err != nil {
-        log.Fatal("failed to listen for connection: ", err)
-    }
-
-    for {
-        nConn, err := listener.Accept()
-        if err != nil {
-            log.Fatal("failed to accept incoming connection: ", err)
-        }
-
-        go HandleClient(nConn, config)
-    }
+    easyssh.EnableLogging(os.Stderr)
+    easyssh.HandleChannel(easyssh.SessionRequest, easyssh.SessionHandler())
+	easyssh.HandleChannel(easyssh.DirectForwardRequest, easyssh.DirectPortForwardHandler())
+	easyssh.HandleRequestFunc(easyssh.RemoteForwardRequest, easyssh.GlobalRequestHandlerFunc(TCPIPForwardRequest))
     
+    // Listen & Accept connections
+    easyssh.ListenAndServe(":22", config, nil)
     return nil
 }
 
@@ -302,6 +228,10 @@ func AddUser(uname string, m *omap.OMap, ccb Callback, dcb Callback) {
     u.ccb = ccb
     u.dcb = dcb
     
+    log.Debug("Adding User=", u)
+    
     // Add user to database
     userDB[uname] = u
+    
+    log.Debug("Users=", userDB)
 }

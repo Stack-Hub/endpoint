@@ -11,9 +11,6 @@ import (
     "os/exec"
     "syscall"
     
-    "github.com/duppercloud/trafficrouter/monitor"
-    "github.com/duppercloud/trafficrouter/config"
-    "github.com/duppercloud/trafficrouter/user"
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/duppercloud/trafficrouter/opt/require"
     "github.com/duppercloud/trafficrouter/opt/register"
@@ -30,9 +27,6 @@ func cleanup() {
     log.Debug("Cleaning up")
     register.Cleanup()
     require.Cleanup()
-    config.Cleanup()
-    monitor.Cleanup()
-    user.Cleanup()
 }
 
 
@@ -165,11 +159,6 @@ func main() {
 			Name:  "register, reg",
             Usage: "Register this service. Format `app:port@raddr[:rport]` e.g. app:80@lb or app:80@lb:80 or app:80@lb:0",
 		},	
-        cli.BoolFlag{
-			Name:  "forcecmd, f",
-            Usage: "SSH force command (used internally)",
-			Hidden: false,
-		},	
         cli.IntFlag{
 			Name:  "count, c",
             Usage: "Wildcard count",
@@ -201,12 +190,6 @@ func main() {
 	}
 
     app.Action = func (c *cli.Context) error {
-        // Send message for Force Command mode and return.
-        if (c.Bool("f") == true) {
-            config.Send()
-            return nil
-        }
-
         passwd := os.Getenv("PASSWD")
         if passwd == "" {
             passwd = "123456789"
@@ -225,9 +208,6 @@ func main() {
             // Flag for go routing
             done := make(chan bool, 1)
             
-            // Initialize users module
-            user.Init()
-
             // Register services.
             register.Process(passwd, c.StringSlice("register"), count, interval, debug)
         

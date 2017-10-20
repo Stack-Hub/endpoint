@@ -9,6 +9,7 @@ import (
     "fmt"
     "net"
     "io"
+    "os"
     "strconv"
     "regexp"
     "errors"
@@ -120,7 +121,7 @@ func ConnAddEv(m *omap.OMap, h *utils.Host) {
     // trigger on-connect code block
     utils.OnConnect(h.RemoteIP, 
                     fmt.Sprint(h.Config.Port), 
-                    "127.128.0." + fmt.Sprint(h.Config.Instance), 
+                    os.Getenv("BINDADDR"), 
                     fmt.Sprint(h.ListenPort), 
                     fmt.Sprint(h.Config.Instance),
                     fmt.Sprint(h.Config.Label))
@@ -237,7 +238,7 @@ func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
     
     // Start SSH Server
-    server.Listen()
+    go server.Listen()
     
     forEach(opts, func(r *req) {
         // Initialize Ordered map and server events.

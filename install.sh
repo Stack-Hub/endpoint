@@ -73,31 +73,6 @@ install() {
 		CURL='busybox wget -qO-'
 	fi
 
-    # Detect platform
-    lsb_dist=''
-    if [ -r /etc/debian_version ]; then
-        lsb_dist='debian'
-    fi
-    if [ -r /etc/alpine-release ]; then
-        lsb_dist='alpine'
-    fi
-
-    case "$lsb_dist" in
-
-        debian)
-            apt-get install -y ssh sshpass
-        ;;
-
-        alpine)
-            apk add openssh sshpass
-        ;;
-
-        *)
-            unsupported_distro
-        ;;
-
-    esac
-
     # install dupper binaries at /usr/local/bin 
     URL="${ROOT_URL}/release/${OS}/${MACHINE}/${BINARY}-${VERSION}.tgz"
     $CURL ${URL} > /tmp/${BINARY}-${VERSION}.tgz

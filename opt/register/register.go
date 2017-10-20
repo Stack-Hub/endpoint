@@ -64,8 +64,8 @@ func Cleanup() {
 /*
  *  --Regiser option parser logic
  */
-func parse(str string) (string, uint32, string) {
-    var expr = regexp.MustCompile(`([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+))?$`)
+func parse(str string) (string, uint32, string, uint32) {
+    var expr = regexp.MustCompile(`([a-zA-Z^:][a-zA-Z0-9\-\.]+):([0-9]+|\*)(@([^:]+)(:([0-9]+))?)$`)
 	parts := expr.FindStringSubmatch(str)
 
     if len(parts) == 0 {
@@ -81,7 +81,17 @@ func parse(str string) (string, uint32, string) {
         utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport[@rhost:rport]\n", str)))
     }
     
-    return parts[1], uint32(lport), parts[4]
+    if parts[6] == "" {
+        parts[6] = parts[2]
+    }
+
+    rport, err := strconv.Atoi(parts[6])
+    if err != nil {
+        utils.Check(errors.New(fmt.Sprintf("Option parse error: [%s]. Format lhost:lport[@rhost:rport]\n", str)))
+    }
+    
+    
+    return parts[1], uint32(lport), parts[4], uint32(rport)
 }
 
 /*
@@ -91,8 +101,7 @@ func forEach(opts []string, cb parsecb) error {
     for _, opt := range opts {
 
         r := Reg{opt: opt}
-        r.lhost, r.lport, r.rhost = parse(opt)
-        r.rport = r.lport
+        r.lhost, r.lport, r.rhost, r.rport = parse(opt)
 
         if r.lport == 0 {
             r.user = r.lhost
@@ -202,9 +211,9 @@ func (r Reg) connect(passwd string, debug bool) error {
  */
 func (r Reg) Connect(passwd string, interval int, debug bool) error {
 
-    r.connect(passwd, debug)
+    err := r.connect(passwd, debug)
     go r.reconnect(passwd, interval, debug)
-    return nil
+    return err
 }
 
 /*

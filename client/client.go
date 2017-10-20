@@ -8,21 +8,19 @@ package client
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
     "os"
-    "errors"
-    "strconv"
 
 	"golang.org/x/crypto/ssh"
     "github.com/duppercloud/trafficrouter/utils"
+    log "github.com/Sirupsen/logrus"
 )
 
 
 /*
  * Connection store
  */
-var clients map[string]ssh.Channel = make(map[string]ssh.Channel, 1)
+var clients map[string]net.Listener = make(map[string]net.Listener, 1)
 
 
 type Endpoint struct {
@@ -34,7 +32,7 @@ func (endpoint *Endpoint) String() string {
 	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
 }
 
-func handleClient(client ssh.Channel, remote net.Conn) {
+func handleClient(client net.Conn, remote net.Conn) {
 	defer client.Close()
 	chDone := make(chan bool)
 
@@ -77,113 +75,66 @@ func Connect(u string, pass string, rhost string, lport uint32, rport uint32, ha
     }
     
 	// Listen on remote server port
-    instance, _ := strconv.Atoi(os.Getenv("INSTANCE"))
+    //instance, _ := strconv.Atoi(os.Getenv("INSTANCE"))
     bindAddr := os.Getenv("BINDADDR")
     
     // remote forwarding port (on remote SSH server network)
     var serviceEndpoint = Endpoint{
         Host: bindAddr,
-        Port: lport,
+        Port: rport,
     }
 
+//    quit := make(chan bool)
+    
     // Connect to SSH remote server using serverEndpoint    
-    conn, err := net.DialTimeout("tcp", serverEndpoint.String(), sshConfig.Timeout)
+    conn, err := ssh.Dial("tcp", serverEndpoint.String(), sshConfig)
 	if err != nil {
 		log.Println(fmt.Printf("Dial INTO remote server error: %s", err))
         return rport, err
 	}
-    
-    c, chans, requests, err := ssh.NewClientConn(conn, serverEndpoint.String(), sshConfig)
-	if err != nil {
-		log.Println(fmt.Printf("Dial INTO remote server error: %s", err))
-        return rport, err
-	}
-    
-    go ssh.DiscardRequests(requests)
 
-    // Once a Session is created, you can execute a single command on
-    // the remote side using the Run method.
-    type channelForwardMsg struct {
-        IP  string
-        Port uint32
-        Instance uint32 
-        Label    string 
-    }
+    /*
+    go func() {
+        conn.Wait()
+        log.Println("Local Client: SSH COnnection closed.")
+        quit <- true
+    }()
+    */
     
-    
-	m := channelForwardMsg{
-        IP: serviceEndpoint.Host,
-        Port: serviceEndpoint.Port,
-        Instance: uint32(instance),
-        Label: os.Getenv("LABEL"),
-	}
-    
-    fmt.Println("tcpip-forward=", m)
-    
-    ok, resp, err := c.SendRequest("tcpip-forward", true, ssh.Marshal(&m))
+    // Listen on remote server port
+	listener, err := conn.Listen("tcp", serviceEndpoint.String())
 	if err != nil {
-        log.Println(err)
-        return rport, err
-	}
-    
-    if !ok {
-        log.Println(errors.New("ssh: tcpip-forward request denied by peer"))
+		log.Println(fmt.Printf("Listen open port ON remote server error: %s", err))
         return rport, err
 	}
 
-    type tcpipForwardResponse struct {
-        Port uint32
-        Host string
-    }
+    _, rListenerPort, _ := utils.GetHostPort(listener.Addr())
     
-	// If the original port was 0, then the remote side will
-	// supply a real port number in the response.
-    var bindResp tcpipForwardResponse
-    ssh.Unmarshal(resp, &bindResp)
-    fmt.Println("rcvd=", bindResp)
+    // Store channel in connection store for easy retival.
+    clients[hash] = listener
+
+    
+    go func(){
         
-    for ch := range chans {
-		var (
-			err   error
-		)    
-        switch channelType := ch.ChannelType(); channelType {
-            case "forwarded-tcpip":
-                type forwardedTCPPayload struct {
-                    Addr       string
-                    Port       uint32
-                    OriginAddr string
-                    OriginPort uint32
-                }
+        // handle incoming connections on reverse forwarded tunnel
+        for {
+            remote, err := listener.Accept()
+            if err != nil {
+                log.Println(err)
+                return
+            }
 
-                var payload forwardedTCPPayload
-                if err = ssh.Unmarshal(ch.ExtraData(), &payload); err != nil {
-                    ch.Reject(2, "could not parse forwarded-tcpip payload: "+err.Error())
-                    continue
-                }
-
-/*
-                laddr, err = utils.ParseTCPAddr(payload.Addr, payload.Port)
+            go func(remote net.Conn) {
+                fmt.Println("Local Server: New Connection from", remote.RemoteAddr())
+                rhost, _, err := utils.GetHostPort(remote.RemoteAddr()) 
                 if err != nil {
-                    ch.Reject(2, err.Error())
-                    continue
+                    log.Println(err)
+                    return
                 }
-                raddr, err = utils.ParseTCPAddr(payload.OriginAddr, payload.OriginPort)
-                if err != nil {
-                    ch.Reject(2, err.Error())
-                    continue
-                }
-*/
-            
-                channel, reqs, err := ch.Accept()
-            
-                // Store channel in connection store for easy retival.
-                clients[hash] = channel
 
-                go ssh.DiscardRequests(reqs)
-            
-                ip := net.ParseIP(bindResp.Host)
+                ip := net.ParseIP(rhost)
 
-                tcpAddr := &net.TCPAddr{
+                tcpAddr := &net.TCPAddr {
                     IP: ip,
                 }   
 
@@ -191,14 +142,18 @@ func Connect(u string, pass string, rhost string, lport uint32, rport uint32, ha
 
                 local, err := d.Dial("tcp", serviceEndpoint.String())
                 if err != nil {
-                    log.Fatalln(fmt.Printf("Dial INTO local service error: %s", err))
+                    log.Println(fmt.Printf("Dial INTO local service error: %s", err))
+                    remote.Close()
+                    return
                 }		
-            
-                go handleClient(channel, local)
-        }
-    }
 
-    return bindResp.Port, err
+                handleClient(remote, local)
+                
+            }(remote)
+        }        
+    }()
+
+    return uint32(rListenerPort), err
 }
 
 
@@ -206,9 +161,9 @@ func Connect(u string, pass string, rhost string, lport uint32, rport uint32, ha
  * Check if client is already connected
  */
 func IsConnected(hash string) bool {
-    ok := clients[hash]
+    _, ok := clients[hash]
     
-    if ok != nil {
+    if ok {
         return true
     }
     
