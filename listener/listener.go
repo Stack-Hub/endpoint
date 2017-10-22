@@ -22,6 +22,38 @@ func main() {}
 
 var client *rpc.Client
 
+//export bind
+func bind(sockfd int, *addr C.struct sockaddr, C.socklen_t addrlen) int
+{
+    lib, err := dl.Open("libc", 0)
+    if err != nil {
+        log.Println("Error opening libc", err)
+        return 0
+    }
+    defer lib.Close()
+
+    var realbind func(sockfd int, *addr C.struct sockaddr, C.socklen_t addrlen) int
+    lib.Sym("bind", &realbind)
+    
+    realbind(sockfd, addr, addrlen)
+}
+
+//export connect
+func connect(sockfd int, *addr C.struct sockaddr, C.socklen_t addrlen) int
+{
+    lib, err := dl.Open("libc", 0)
+    if err != nil {
+        log.Println("Error opening libc", err)
+        return 0
+    }
+    defer lib.Close()
+    
+    var realconnect func(sockfd int, *addr C.struct sockaddr, C.socklen_t addrlen) int
+    lib.Sym("connect", &realconnect)
+    
+    realconnect(sockfd, addr, addrlen)
+}
+
 //export listen
 func listen(fd C.int, backlog C.int) int32 {
     

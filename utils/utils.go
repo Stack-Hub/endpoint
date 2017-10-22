@@ -14,7 +14,7 @@ import (
     "io"
     "sync"
 
-    log "github.com/Sirupsen/logrus"
+    "github.com/prometheus/common/log"
 )
 
 
@@ -57,6 +57,16 @@ func Check(e error) {
 func BlockForever() {
     select {}
 }
+
+type Endpoint struct {
+	Host string
+	Port uint32
+}
+
+func (endpoint *Endpoint) String() string {
+	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
+}
+
 
 /* 
  * CopyReadWriters copies biderectionally - output from a to b, and output of b into a. 

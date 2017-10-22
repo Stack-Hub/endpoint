@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
     "github.com/duppercloud/trafficrouter/utils"
-    log "github.com/Sirupsen/logrus"
+    "github.com/prometheus/common/log"
 )
 
 
@@ -21,16 +21,6 @@ import (
  * Connection store
  */
 var clients map[string]net.Listener = make(map[string]net.Listener, 1)
-
-
-type Endpoint struct {
-	Host string
-	Port uint32
-}
-
-func (endpoint *Endpoint) String() string {
-	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
-}
 
 func handleClient(client net.Conn, remote net.Conn) {
 	defer client.Close()
@@ -40,7 +30,7 @@ func handleClient(client net.Conn, remote net.Conn) {
 	go func() {
 		_, err := io.Copy(client, remote)
 		if err != nil {
-			log.Println(fmt.Sprintf("error while copy remote->local: %s", err))
+			log.Debug(fmt.Sprintf("error while copy remote->local: %s", err))
 		}
 		chDone <- true
 	}()
@@ -49,7 +39,7 @@ func handleClient(client net.Conn, remote net.Conn) {
 	go func() {
 		_, err := io.Copy(remote, client)
 		if err != nil {
-			log.Println(fmt.Sprintf("error while copy local->remote: %s", err))
+			log.Debug(fmt.Sprintf("error while copy local->remote: %s", err))
 		}
 		chDone <- true
 	}()
@@ -57,9 +47,8 @@ func handleClient(client net.Conn, remote net.Conn) {
 	<-chDone
 }
 
-func Connect(u string, pass string, rhost string, lport uint32, rport uint32, hash string, debug bool) (uint32, error) {
+func Connect(u string, pass string, rhost string, lport uint32, rport uint32, hash string, debug bool) error {
 
-	// refer to https://godoc.org/golang.org/x/crypto/ssh for other authentication types
 	sshConfig := &ssh.ClientConfig{
 		User: u,
 		Auth: []ssh.AuthMethod{
@@ -69,66 +58,60 @@ func Connect(u string, pass string, rhost string, lport uint32, rport uint32, ha
 	}
 
     // remote SSH server
-    var serverEndpoint = Endpoint{
+    var serverEndpoint = utils.Endpoint{
         Host: rhost,
         Port: 22,
     }
     
 	// Listen on remote server port
-    //instance, _ := strconv.Atoi(os.Getenv("INSTANCE"))
     bindAddr := os.Getenv("BINDADDR")
     
-    // remote forwarding port (on remote SSH server network)
-    var serviceEndpoint = Endpoint{
+    // remote forwarding port (on remote SSH server)
+    var serviceEndpoint = utils.Endpoint{
         Host: bindAddr,
         Port: rport,
     }
 
-//    quit := make(chan bool)
     
+    fmt.Println("SSH Client: Initiating connection to ", serverEndpoint.String())
     // Connect to SSH remote server using serverEndpoint    
     conn, err := ssh.Dial("tcp", serverEndpoint.String(), sshConfig)
 	if err != nil {
-		log.Println(fmt.Printf("Dial INTO remote server error: %s", err))
-        return rport, err
+		log.Debug(fmt.Printf("Dial INTO remote server error: %s", err))
+        return err
 	}
-
-    /*
-    go func() {
-        conn.Wait()
-        log.Println("Local Client: SSH COnnection closed.")
-        quit <- true
-    }()
-    */
     
     // Listen on remote server port
-	listener, err := conn.Listen("tcp", serviceEndpoint.String())
-	if err != nil {
-		log.Println(fmt.Printf("Listen open port ON remote server error: %s", err))
-        return rport, err
-	}
+    listener, err := conn.Listen("tcp", serviceEndpoint.String())
+    if err != nil {
+        log.Debug(fmt.Printf("Listen open port ON remote server error: %s", err))
+        return err
+    }
 
-    _, rListenerPort, _ := utils.GetHostPort(listener.Addr())
-    
+    fmt.Println("SSH Client: Listening connection on ", serverEndpoint.String(), 
+                "@", serverEndpoint.String())
     // Store channel in connection store for easy retival.
     clients[hash] = listener
 
-    
+
     go func(){
-        
+
         // handle incoming connections on reverse forwarded tunnel
         for {
             remote, err := listener.Accept()
             if err != nil {
-                log.Println(err)
+                log.Debug("SSH Client: Remote Listener closed on ", serverEndpoint.String(), " with ", err)
+                delete(clients, hash)
+                log.Debug("SSH Client: clients ", clients)
                 return
             }
 
+            fmt.Println("SSH Client: Incoming connection on ", remote.LocalAddr().String(), 
+                        " from ", listener.Addr().String())
             go func(remote net.Conn) {
-                fmt.Println("Local Server: New Connection from", remote.RemoteAddr())
                 rhost, _, err := utils.GetHostPort(remote.RemoteAddr()) 
                 if err != nil {
-                    log.Println(err)
+                    log.Debug(err)
                     return
                 }
 
@@ -140,20 +123,26 @@ func Connect(u string, pass string, rhost string, lport uint32, rport uint32, ha
 
                 d := net.Dialer{LocalAddr: tcpAddr}
 
+                // Service Port at remote container
+                serviceEndpoint.Port = lport
+
+                fmt.Println("SSH Client: Connecting to ", serviceEndpoint.String())
                 local, err := d.Dial("tcp", serviceEndpoint.String())
                 if err != nil {
-                    log.Println(fmt.Printf("Dial INTO local service error: %s", err))
+                    log.Debug(fmt.Printf("Dial INTO local service error: %s", err))
                     remote.Close()
                     return
                 }		
 
+                fmt.Println("SSH Client: Routing Data between ", remote.LocalAddr().String(), 
+                            " from ", local.RemoteAddr().String())
                 handleClient(remote, local)
-                
+
             }(remote)
         }        
     }()
-
-    return uint32(rListenerPort), err
+        
+    return nil
 }
 
 
@@ -180,6 +169,5 @@ func Disconnect(hash string) {
         err := ch.Close()
         utils.Check(err) 
         delete(clients, hash)
-        clients[hash] = nil
     }
 }

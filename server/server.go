@@ -19,7 +19,7 @@ import (
     "dev.justinjudd.org/justin/easyssh"
     "github.com/duppercloud/trafficrouter/omap"
     "github.com/duppercloud/trafficrouter/utils"
-    log "github.com/Sirupsen/logrus"
+    "github.com/prometheus/common/log"
 )
 
 type Callback func(*omap.OMap, *utils.Host)
@@ -92,13 +92,15 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 	reply := (t.Port == 0) && req.WantReply
 	ssh.Unmarshal(req.Payload, &t)
 	addr := fmt.Sprintf("%s:%d", t.Host, t.Port)
+    
 	ln, err := net.Listen("tcp", addr) //tie to the client connection
-
 	if err != nil {
-		log.Println("Unable to listen on address: ", addr)
+		log.Debug("Unable to listen on address: ", addr)
 		return
 	}
-	log.Println("Listening on address: ", ln.Addr().String())
+    
+    fmt.Println("SSH Server: Remote Port Forward on address ", ln.Addr().String(), 
+                " from ", sshConn.RemoteAddr().String())
 
 	quit := make(chan bool)
 
@@ -138,8 +140,8 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 					continue
 				}
 
-                log.Println("RemoteServer: New Connection: ", conn.RemoteAddr(), "-->", conn.LocalAddr() )
-
+                fmt.Println("SSH Server: New Connection request remote port ", conn.LocalAddr())
+    
                 go func(conn net.Conn) {
 					p := directForward{}
 					var err error
@@ -158,17 +160,19 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 					p.Port2 = uint32(portnum)
 					ch, reqs, err := sshConn.OpenChannel(ForwardedTCPReturnRequest, ssh.Marshal(p))
 					if err != nil {
-						log.Println("Open forwarded Channel: ", err.Error())
+						log.Debug("Open forwarded Channel: ", err.Error())
 						return
 					}
 					go ssh.DiscardRequests(reqs)
+
+                    fmt.Println("SSH Server: Routing Data between ", conn.LocalAddr(), "<-->", sshConn.RemoteAddr().String())
 					go func(ch ssh.Channel, conn net.Conn) {
 
 						close := func() {
 							ch.Close()
 							conn.Close()
 
-							log.Printf("forwarding closed")
+							log.Debug("forwarding closed")
 						}
 
 						go utils.CopyReadWriters(conn, ch, close)
@@ -183,7 +187,10 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 	}()
     
     sshConn.Wait()
-    log.Println("Stop forwarding/listening on ", ln.Addr())
+    u = userDB[sshConn.User()]
+    go u.dcb(u.m, h)    
+    
+    log.Debug("Stop forwarding/listening on ", ln.Addr())
     ln.Close()
     quit <- true        
 

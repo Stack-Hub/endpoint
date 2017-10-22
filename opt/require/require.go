@@ -10,7 +10,6 @@ import (
     "net"
     "io"
     "os"
-    "strconv"
     "regexp"
     "errors"
     "encoding/json"
@@ -18,7 +17,7 @@ import (
     "github.com/duppercloud/trafficrouter/omap"
     "github.com/duppercloud/trafficrouter/server"
     "github.com/duppercloud/trafficrouter/utils"
-    log "github.com/Sirupsen/logrus"
+    "github.com/prometheus/common/log"
 )
 
 /*
@@ -112,7 +111,10 @@ func ConnAddEv(m *omap.OMap, h *utils.Host) {
         log.Debug("r=", r)
     }
     
-    m.Add(h.Config.Instance, h)
+    // TODO: Change key such that it is unique/connections.
+    // Currently it is based on random port assignment, which can overlap with 
+    // different localhost/8 IP
+    m.Add(h.ListenPort, h)
     
     payload, err := json.Marshal(h)
     utils.Check(err)
@@ -154,7 +156,7 @@ func ConnAddEv(m *omap.OMap, h *utils.Host) {
  * Connection removed callback
  */
 func ConnRemoveEv(m *omap.OMap, h *utils.Host) {
-    m.Remove(h.Config.Instance)
+    m.Remove(h.ListenPort)
 
     payload, err := json.Marshal(h)
     utils.Check(err)
@@ -208,15 +210,18 @@ func handleRequest(m *omap.OMap, in net.Conn) {
         if el != nil {
             h := el.Value.(*utils.Host)
             if h != nil {
-                port := strconv.Itoa(int(h.ListenPort))
 
-                log.Debug("Connecting to localhost:", port)
-                out, err := net.Dial("tcp", "127.0.0.1:" + port)
+                endpoint := utils.Endpoint{
+                    Host: h.RemoteIP,
+                    Port: h.ListenPort,
+                }
+
+                log.Debug("Connecting to", endpoint.String())
+                out, err := net.Dial("tcp", endpoint.String())
                 // Connection failed, remove connection information from the list
                 if err != nil {
                     log.Error(err)
                     log.Debug("Connection failed removing ", el)
-                    m.RemoveEl(el)
                     continue
                 }
                 defer out.Close()    

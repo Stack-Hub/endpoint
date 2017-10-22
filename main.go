@@ -15,7 +15,7 @@ import (
     "github.com/duppercloud/trafficrouter/opt/require"
     "github.com/duppercloud/trafficrouter/opt/register"
     "github.com/duppercloud/trafficrouter/version"
-    log "github.com/Sirupsen/logrus"
+    "github.com/prometheus/common/log"
 //    reaper "github.com/ramr/go-reaper"
     "github.com/urfave/cli"
 )
@@ -183,7 +183,7 @@ func main() {
         
         debug := c.Bool("D")
 		if debug {
-			log.SetLevel(log.DebugLevel)
+            log.Base().SetLevel("debug")
 		}
 
 		return nil

@@ -17,7 +17,8 @@ import (
     
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/duppercloud/trafficrouter/client"
-    log "github.com/Sirupsen/logrus"
+    "github.com/prometheus/common/log"
+    "github.com/bogdanovich/dns_resolver"
 )
 
 /*
@@ -132,7 +133,7 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
     for {      
         
         // Go connect, ignore errors and keep retrying
-        r.connect(passwd, debug)
+        go r.connect(passwd, debug)
         
         // Diconnect all ssh connection if channel is closed and return.
         select {
@@ -149,6 +150,7 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
                     return
                 }
             case  <- time.After( time.Duration(interval) * 1000 * time.Millisecond):
+
             /* no-op */
         }
     }
@@ -160,15 +162,22 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
  */
 func (r Reg) connect(passwd string, debug bool) error {
 
-    // Check if host exists
-    ipArr, err := net.LookupHost(r.rhost)
+    resolver, err := dns_resolver.NewFromResolvConf("/etc/resolv.conf")
     if err != nil {
+        log.Error(err)
+        return err
+    }
+    
+    // Check if host exists
+    ipArr, err := resolver.LookupHost(r.rhost)
+    if err != nil {
+        log.Error(err)
         return err
     }
 
     // Connect to all IP address for remote host
     for _, ip := range ipArr {
-        hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip
+        hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip.String()
 
         // flag for skipping self connection
         skip := false
@@ -178,7 +187,8 @@ func (r Reg) connect(passwd string, debug bool) error {
         for _, address := range laddrs {
             if ipnet, ok := address.(*net.IPNet); ok {
                 if ipnet.IP.To4() != nil {
-                    if ip == ipnet.IP.String() {
+                    log.Debug("Comparing IP ", ip, " with ", ipnet.IP)
+                    if ip.String() == ipnet.IP.String() {
                         skip = true
                         break
                     }
@@ -196,7 +206,7 @@ func (r Reg) connect(passwd string, debug bool) error {
         // Use the same port for rest of the connections.
         if !client.IsConnected(hash) {
             fmt.Println("Connecting...", hash)
-            r.rport, err = client.Connect(r.user, passwd, ip, r.lport, r.rport, hash, debug)
+            err = client.Connect(r.user, passwd, ip.String(), r.lport, r.rport, hash, debug)
             if err != nil {
                 return err
             }

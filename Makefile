@@ -28,6 +28,10 @@ endif
 
 all: trafficrouter
 
+bindata: package
+	go-bindata -o release/${OS}/${ARCH}/src/${BINARY}.go --prefix "release/${OS}/${ARCH}/" -pkg trafficrouter release/${OS}/${ARCH}/${BINARY}.tgz
+
+
 trafficrouter: main.go 
 	go build -o release/${OS}/${ARCH}/bin/${BINARY} main.go  
 	chmod u+s release/${OS}/${ARCH}/bin/${BINARY}
@@ -45,13 +49,13 @@ clean:
 	rm -rf release
 
 package: trafficrouter
-	cd release/${OS}/${ARCH} && tar -czvf ${BINARY}-${VERSION}.tgz -T ../../../release_files.txt
+	cd release/${OS}/${ARCH} && tar -czvf ${BINARY}.tgz -T ../../../release_files.txt
 
 upload: package
-	aws --region us-west-1 s3 cp release/${OS}/${ARCH}/${BINARY}-${VERSION}.tgz s3://get.dupper.co/${BINARY}/builds/${OS}/${ARCH}/${BINARY}-${VERSION}.tgz --acl public-read
+	aws --region us-west-1 s3 cp release/${OS}/${ARCH}/${VERSION}/${BINARY}.tgz s3://get.dupper.co/${BINARY}/builds/${OS}/${ARCH}/${VERSION}/${BINARY}.tgz --acl public-read
 
 release: package
-	aws --region us-west-1 s3 cp release/${OS}/${ARCH}/${BINARY}-${VERSION}.tgz s3://get.dupper.co/${BINARY}/release/${OS}/${ARCH}/${BINARY}-${VERSION}.tgz --acl public-read
+	aws --region us-west-1 s3 cp release/${OS}/${ARCH}/${VERSION}/${BINARY}.tgz s3://get.dupper.co/${BINARY}/release/${OS}/${ARCH}/${VERSION}/${BINARY}.tgz --acl public-read
 
 publish:
 	sed -i.bak "s/VERSION=.*/VERSION=${VERSION}/g" install.sh
