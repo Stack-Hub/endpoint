@@ -187,7 +187,6 @@ func (r Reg) connect(passwd string, debug bool) error {
         for _, address := range laddrs {
             if ipnet, ok := address.(*net.IPNet); ok {
                 if ipnet.IP.To4() != nil {
-                    log.Debug("Comparing IP ", ip, " with ", ipnet.IP)
                     if ip.String() == ipnet.IP.String() {
                         skip = true
                         break

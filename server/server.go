@@ -99,7 +99,7 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 		return
 	}
     
-    fmt.Println("SSH Server: Remote Port Forward on address ", ln.Addr().String(), 
+    fmt.Println("SSH Server: Remote Port Forward request for ", ln.Addr().String(), 
                 " from ", sshConn.RemoteAddr().String())
 
 	quit := make(chan bool)
@@ -140,7 +140,7 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 					continue
 				}
 
-                fmt.Println("SSH Server: New Connection request remote port ", conn.LocalAddr())
+                fmt.Println("SSH Server: New Connection request local port ", conn.LocalAddr())
     
                 go func(conn net.Conn) {
 					p := directForward{}
@@ -165,7 +165,7 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 					}
 					go ssh.DiscardRequests(reqs)
 
-                    fmt.Println("SSH Server: Routing Data between ", conn.LocalAddr(), "<-->", sshConn.RemoteAddr().String())
+                    fmt.Println("SSH Server: Routing Data between ", conn.RemoteAddr(), "<-->", conn.LocalAddr(), "@", sshConn.RemoteAddr().String())
 					go func(ch ssh.Channel, conn net.Conn) {
 
 						close := func() {

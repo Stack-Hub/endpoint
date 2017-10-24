@@ -12,6 +12,7 @@ import (
     "syscall"
     
     "github.com/duppercloud/trafficrouter/utils"
+    "github.com/duppercloud/trafficrouter/dns"
     "github.com/duppercloud/trafficrouter/opt/require"
     "github.com/duppercloud/trafficrouter/opt/register"
     "github.com/duppercloud/trafficrouter/version"
@@ -198,6 +199,9 @@ func main() {
         // Set ulimit to max
         ulimit(999999)
         
+        // Start local DNS server
+        go dns.Start()
+
         // Poll specific values
         count := c.Int("count")
         interval := c.Int("interval")
@@ -225,13 +229,24 @@ func main() {
 
                         port := os.Getenv("PORT")
                         log.Debug("PORT=", port)
+                        bindaddr := os.Getenv("BINDADDR")
+                        log.Debug("BINDADDR=", bindaddr)
+
+                        env := os.Environ()
+
+/* TODO: Force applications to bind to localhost IPs
+                        env = append(env, "FORCE_NET_VERBOSE=999")
+                        env = append(env, "FORCE_NET_LOG='/var/log/bind.log'")
+                        env = append(env, "FORCE_BIND_ADDRESS_V4=" + bindaddr)
+                        env = append(env, "LD_PRELOAD=/usr/local/lib/force_bind.so")
+*/
+                        
                         if port == "*" {
-                            env := os.Environ()
                             env = append(env, "LD_PRELOAD=/usr/local/lib/listener.so")
-                            proc.Env = env
-                            log.Debug("env=", proc.Env)
                         }
 
+                        proc.Env = env
+                        log.Debug("env=", proc.Env)
                         proc.Stdout = os.Stdout
                         proc.Stderr = os.Stderr
                         err := proc.Start()
