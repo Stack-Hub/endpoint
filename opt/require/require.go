@@ -27,7 +27,6 @@ type req struct {
     opt   string               //option string
     lhost string               //local hostname
     lport string               //local port to connect
-    count int
     rhost string               //remote host that connects
     rport string               //remote port to map to
     user  string               //username
@@ -37,12 +36,11 @@ type req struct {
 type parsecb func(*req)
 type callback func()
 
-var done bool = false
+var serverRegistered bool = false
 var asyncCB callback = nil 
 var reqs []req
 
 func Cleanup() {
-    done = false
 }
 
 /*
@@ -53,7 +51,7 @@ func forEach(opts []string, cb parsecb) {
     // Prepare and store all require option in global context.
     for _, opt := range opts {
         var r req
-        r.rhost, r.rport, r.count, r.lhost, r.lport = parse(opt)
+        r.rhost, r.rport, r.lhost, r.lport = parse(opt)
 
         r.user = r.rhost
         log.Debug("r.user=", r.user)
@@ -64,7 +62,6 @@ func forEach(opts []string, cb parsecb) {
         
         log.Debug("raddr=", r.rhost, ",",
                   "rport=", r.rport, ",",
-                  "count=", r.count, ",",
                   "laddr=", r.lhost, ",",
                   "lport=", r.lport)
         reqs = append(reqs, r)
@@ -81,21 +78,15 @@ func forEach(opts []string, cb parsecb) {
  * Formats rhost:rport             - one2one port mapping
  *         rhost:rport@lhost:lport - load balance rport to lport
  */
-func parse(str string) (string, string, int, string, string) {
+func parse(str string) (string, string, string, string) {
     var expr = regexp.MustCompile(`^([^:]+):([0-9]+|\*)(@([a-zA-Z][a-zA-Z0-9]+|\*):([0-9]+))?$`)
 	parts := expr.FindStringSubmatch(str)
     
 	if len(parts) == 0 {
         utils.Check(errors.New(fmt.Sprintf("Require option parse error: [%s]. Format rhost:rport[@lhost:lport]\n", str)))
 	}
-    
-    count := 1
-    
-    if parts[2] == "*" {
-        count = 0    
-    } 
-        
-    return parts[1], parts[2], count, parts[4], parts[5]
+            
+    return parts[1], parts[2], parts[4], parts[5]
 }
 
 /*
@@ -106,10 +97,6 @@ func ConnAddEv(m *omap.OMap, h *utils.Host) {
 
     // If this is first connection then decrement callback ticker
     r := m.Userdata.(*req)
-    if r.count > 0 {
-        r.count--
-        log.Debug("r=", r)
-    }
     
     // TODO: Change key such that it is unique/connections.
     // Currently it is based on random port assignment, which can overlap with 
@@ -131,24 +118,6 @@ func ConnAddEv(m *omap.OMap, h *utils.Host) {
     // If this is first connection start listening on load balanced port
     if len(r.lhost) > 0 && m.Len() == 1 && r.lb == nil {
         r.lb = listen(m, r.lhost, r.lport)
-    }
-    
-    log.Debug("done=", done)
-    // If asyncCB is not triggered check if all requirements are met.
-    if !done {
-        // Return if not all required connections are established
-        for _, r := range reqs {
-            log.Debug("checking r=", r)
-            if r.count > 0 {
-                return
-            }
-        }
-
-        // Trigger callback because all required connections are established.
-        if asyncCB != nil {
-            done = true
-            asyncCB()
-        }        
     }
 }
 
@@ -242,8 +211,11 @@ func handleRequest(m *omap.OMap, in net.Conn) {
 func Process(passwd string, opts []string,  cb callback) {
     log.Debug(opts)
     
-    // Start SSH Server
-    go server.Listen()
+    if !serverRegistered {
+        // Start SSH Server
+        go server.Listen()
+        serverRegistered = true
+    }
     
     forEach(opts, func(r *req) {
         // Initialize Ordered map and server events.
@@ -253,11 +225,6 @@ func Process(passwd string, opts []string,  cb callback) {
         // Add user to ssh server
         go server.AddUser(r.user, m, ConnAddEv, ConnRemoveEv)
 
-        //Store callback for later invocation
-        if cb != nil {
-            asyncCB = cb
-            cb = nil            
-        } 
     })
     
     // If options are non-zero then don't invoke callback now.

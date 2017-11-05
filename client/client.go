@@ -17,10 +17,15 @@ import (
 )
 
 
+type Connection struct {
+    l net.Listener
+    c *ssh.Client
+}
+
 /*
  * Connection store
  */
-var clients map[string]net.Listener = make(map[string]net.Listener, 1)
+var clients map[string]*Connection = make(map[string]*Connection, 1)
 
 func handleClient(client net.Conn, remote net.Conn) {
 	defer client.Close()
@@ -91,7 +96,8 @@ func Connect(u string, pass string, rhost string, lport uint32, rport uint32, ha
     fmt.Println("SSH Client: Listening connection on ", serverEndpoint.String(), 
                 "@", serverEndpoint.String())
     // Store channel in connection store for easy retival.
-    clients[hash] = listener
+    
+    clients[hash] = &Connection{l: listener, c: conn}
 
 
     go func(){
@@ -137,7 +143,6 @@ func Connect(u string, pass string, rhost string, lport uint32, rport uint32, ha
                 fmt.Println("SSH Client: Routing Data between ", remote.LocalAddr().String(), 
                             " from ", local.RemoteAddr().String())
                 handleClient(remote, local)
-
             }(remote)
         }        
     }()
@@ -163,11 +168,12 @@ func IsConnected(hash string) bool {
  * Diconnect client
  */
 func Disconnect(hash string) {
-    ch := clients[hash]
+    connection := clients[hash]
 
-    if ch != nil {
-        err := ch.Close()
-        utils.Check(err) 
+    if connection != nil {
+        fmt.Println("Request: Closing connections ", connection)
+        connection.l.Close()
+        connection.c.Close()
         delete(clients, hash)
     }
 }

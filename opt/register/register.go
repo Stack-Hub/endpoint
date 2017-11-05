@@ -19,6 +19,7 @@ import (
     "github.com/duppercloud/trafficrouter/client"
     "github.com/prometheus/common/log"
     "github.com/bogdanovich/dns_resolver"
+    netstat "github.com/shirou/gopsutil/net"
 )
 
 /*
@@ -34,7 +35,8 @@ type Reg struct {
     user       string                //remote username
 }
 
-var goroutines map[uint32]chan bool = make(map[uint32]chan bool, 1)
+var goroutines map[string]chan bool = make(map[string]chan bool, 1)
+var rpcRegistered bool = false
 
 type Args struct {
     Lport uint32
@@ -48,18 +50,30 @@ type RPC struct {
     debug    bool
 }
 
-
 /*
  *  forEach parser callback
  */
 type parsecb func(*Reg) error
 
 func Cleanup() {
-    for _, done := range goroutines {
+    fmt.Println("Register: Closing all connections.")
+    for key, done := range goroutines {
+        fmt.Println("Register: Closing done=", done)
         if done != nil {
             close(done)
+            delete(goroutines, key)
         }
     }
+}
+
+func lookupHost(rhost string) ([]net.IP, error) {
+    resolver, err := dns_resolver.NewFromResolvConf("/etc/resolv.conf")
+    if err != nil {
+        log.Error(err)
+        return nil, err
+    }
+    
+    return resolver.LookupHost(rhost)
 }
 
 /*
@@ -117,8 +131,10 @@ func forEach(opts []string, cb parsecb) error {
                   "rport=", r.rport, ",",
                   "ruser=", r.user)
         
-        if err := cb(&r); err != nil {
-            return err
+        if cb != nil {
+            if err := cb(&r); err != nil {
+                return err
+            }            
         }
     }
     return nil
@@ -128,8 +144,8 @@ func forEach(opts []string, cb parsecb) error {
 func (r Reg) reconnect(passwd string, interval int, debug bool) {
     // Channel to notify when to stop this go routine
     done := make(chan bool)
-    goroutines[r.lport] = done
-    
+    goroutines[r.rhost] = done
+
     for {      
         
         // Go connect, ignore errors and keep retrying
@@ -141,10 +157,10 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
                 log.Debug("Terminating goroutine")
                 if !ok {
                     // Check if host exists
-                    ipArr, _ := net.LookupHost(r.rhost)
+                    ipArr, _ := lookupHost(r.rhost)
 
                     for _, ip := range ipArr {
-                        hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip
+                        hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip.String()
                         client.Disconnect(hash)
                     }
                     return
@@ -157,61 +173,73 @@ func (r Reg) reconnect(passwd string, interval int, debug bool) {
 }
 
 
+func (r Reg) isPortOpen() bool {
+    conns, err := netstat.Connections("inet")
+    if err != nil {
+        log.Debug(err)
+        return false
+    }
+
+    for _, conn := range conns {
+        if r.lport !=0 && conn.Laddr.Port == r.lport {
+            return true
+        }
+    }            
+    
+    return false
+}
+
 /*
  *  Connect internal to remote host and periodically check the state.
  */
 func (r Reg) connect(passwd string, debug bool) error {
 
-    resolver, err := dns_resolver.NewFromResolvConf("/etc/resolv.conf")
-    if err != nil {
-        log.Error(err)
-        return err
-    }
-    
-    // Check if host exists
-    ipArr, err := resolver.LookupHost(r.rhost)
-    if err != nil {
-        log.Error(err)
-        return err
-    }
+    if r.isPortOpen() {
+        
+        ipArr, err := lookupHost(r.rhost)
+        if err != nil {
+            log.Error(err)
+            return err
+        }
+        
+        // Connect to all IP address for remote host
+        for _, ip := range ipArr {
+            hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip.String()
 
-    // Connect to all IP address for remote host
-    for _, ip := range ipArr {
-        hash := r.lhost + "." + fmt.Sprint(r.lport) + "@" + ip.String()
+            // flag for skipping self connection
+            skip := false
 
-        // flag for skipping self connection
-        skip := false
-
-        // Make sure to not connect to itself for container:* scenario
-        laddrs, _ := net.InterfaceAddrs()
-        for _, address := range laddrs {
-            if ipnet, ok := address.(*net.IPNet); ok {
-                if ipnet.IP.To4() != nil {
-                    if ip.String() == ipnet.IP.String() {
-                        skip = true
-                        break
+            // Make sure to not connect to itself for container:* scenario
+            laddrs, _ := net.InterfaceAddrs()
+            for _, address := range laddrs {
+                if ipnet, ok := address.(*net.IPNet); ok {
+                    if ipnet.IP.To4() != nil {
+                        if ip.String() == ipnet.IP.String() {
+                            skip = true
+                            break
+                        }
                     }
-                }
-            }                
-        }
-
-        // Skip if remote IP is one of local interface ip
-        if skip {
-            continue 
-        }
-
-        // connect to dynamic port.
-        // store assigned port in map
-        // Use the same port for rest of the connections.
-        if !client.IsConnected(hash) {
-            fmt.Println("Connecting...", hash)
-            err = client.Connect(r.user, passwd, ip.String(), r.lport, r.rport, hash, debug)
-            if err != nil {
-                return err
+                }                
             }
-        }            
+
+            // Skip if remote IP is one of local interface ip
+            if skip {
+                continue 
+            }
+
+            // connect to dynamic port.
+            // store assigned port in map
+            // Use the same port for rest of the connections.
+            if !client.IsConnected(hash) {
+                fmt.Println("Connecting...", hash)
+                err = client.Connect(r.user, passwd, ip.String(), r.lport, r.rport, hash, debug)
+                if err != nil {
+                    return err
+                }
+            }            
+        }        
     }
-    
+
     return nil
 }        
 
@@ -230,9 +258,9 @@ func (r Reg) Connect(passwd string, interval int, debug bool) error {
  */
 func (r Reg) Disconnect() {
     // Disconnect all connections for lport by closing goroutine channel.
-    if goroutines[r.lport] != nil {
-        close(goroutines[r.lport])
-        delete(goroutines, r.lport)                
+    if goroutines[r.rhost] != nil {
+        close(goroutines[r.rhost])
+        delete(goroutines, r.rhost)                
     }
 }
 
@@ -245,9 +273,12 @@ func (_rpc RPC) Connect(args *Args, errno *int) error {
     log.Debug("RPC Connect invoked with args=", args)
     // Start event loop for each option
     forEach(_rpc.opts, func(r *Reg) error {
-        r.lport = args.Lport
-        r.rport = args.Rport
-        r.Connect(_rpc.passwd, _rpc.interval, _rpc.debug)
+        if r.lport == 0 {
+            rDynamic := r
+            rDynamic.lport = args.Lport
+            rDynamic.rport = args.Rport
+            rDynamic.Connect(_rpc.passwd, _rpc.interval, _rpc.debug)            
+        }
         return nil
     })    
         
@@ -275,25 +306,27 @@ func (_rpc RPC) Disconnect(args *Args, errno *int) error {
 /*
  *  Process --regiser options
  */
-func Process(passwd string, opts []string, count int, interval int, debug bool) {
+func Process(passwd string, opts []string, interval int, debug bool) {
     log.Debug(opts)
 
-    // Init RPC struct and export for remote calling
-    _rpc := new(RPC)
-    _rpc.opts = opts
-    _rpc.passwd = passwd
-    _rpc.interval = interval
-    _rpc.debug = debug
-    
-    rpc.Register(_rpc)
-    rpc.HandleHTTP()
-    l, e := net.Listen("tcp", "localhost:3877")
-    if e != nil {
-        log.Error("listen error:", e)
+    if !rpcRegistered {
+        // Init RPC struct and export for remote calling
+        _rpc := new(RPC)
+        _rpc.opts = opts
+        _rpc.passwd = passwd
+        _rpc.interval = interval
+        _rpc.debug = debug
+
+        rpc.Register(_rpc)
+        rpc.HandleHTTP()
+        l, e := net.Listen("tcp", "localhost:3877")
+        if e != nil {
+            log.Error("listen error:", e)
+        }
+        go http.Serve(l, nil)    
+        rpcRegistered = true
     }
-    go http.Serve(l, nil)    
-    
-    
+
     // Start event loop for each option
     forEach(opts, func(r *Reg) error {        
         if r.lport != 0 {
@@ -302,6 +335,5 @@ func Process(passwd string, opts []string, count int, interval int, debug bool) 
             }
         }
         return nil
-    })      
-    
+    })              
 }

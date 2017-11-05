@@ -10,6 +10,10 @@ import (
     "os/signal"
     "os/exec"
     "syscall"
+    "strconv"
+    "io"
+    "bufio"
+    "fmt"
     
     "github.com/duppercloud/trafficrouter/utils"
     "github.com/duppercloud/trafficrouter/dns"
@@ -17,7 +21,6 @@ import (
     "github.com/duppercloud/trafficrouter/opt/register"
     "github.com/duppercloud/trafficrouter/version"
     "github.com/prometheus/common/log"
-//    reaper "github.com/ramr/go-reaper"
     "github.com/urfave/cli"
 )
     
@@ -82,39 +85,6 @@ func ulimit(num uint64){
 
 /*
  * Entrypoint
- * Usecases: 
-
- * For connecting stateless service
- * trafficrouter --register app:80@lb
- * trafficrouter --require  app:80@localhost>80
-
- * For connecing stateful service
- * trafficrouter --register mysql:80@app
- * trafficrouter --require  mysql:80@localhost --on-connect 'MYSQL=$DIP:$DPORT service restart app'
-
- * For connecing service to itself
- * trafficrouter --register nodes:*@nodes
- * trafficrouter --require  nodes:*@localhost --on-connect 'NODESTRING=$NODESTRING:$DIP:$DPORT service restart mysql'
-
- * For stateful cluster (ex: mysql)
- * trafficrouter --register  manager:1186@nodes
- * trafficrouter --require   manager:1186@localhost
-
- * trafficrouter --register  manager:1186@mysql
- * trafficrouter --require   manager:1186@localhost
-
- * trafficrouter --register  nodes:*@manager
- * trafficrouter --require   nodes:*@localhost
-
- * trafficrouter --register  nodes:*@nodes
- * trafficrouter --require   nodes:*@localhost
-
- * trafficrouter --register  nodes:*@mysql
- * trafficrouter --require   nodes:*@localhost
-
- * trafficrouter --register  nodes:*@backup
- * trafficrouter --require   nodes:*@localhost
-
  */
 func main() {
 
@@ -122,12 +92,7 @@ func main() {
      * Install Signal handlers for proper cleanup.
      */
     installHandler()
-    
-    /*
-     * Start zombie reaper in background
-     */
-    //go reaper.Reap()
-    
+        
     /*
      * Global error handling.
      * Cleanup and exit.
@@ -159,11 +124,6 @@ func main() {
         cli.StringSliceFlag{
 			Name:  "register, reg",
             Usage: "Register this service. Format `app:port@raddr[:rport]` e.g. app:80@lb or app:80@lb:80 or app:80@lb:0",
-		},	
-        cli.IntFlag{
-			Name:  "count, c",
-            Usage: "Wildcard count",
-			Value: 10,
 		},	
         cli.IntFlag{
 			Name:  "interval, i",
@@ -200,10 +160,15 @@ func main() {
         ulimit(999999)
         
         // Start local DNS server
-        go dns.Start()
+        dns.Start()
+        port := os.Getenv("PORT")
+        log.Debug("PORT=", port)
+        instance, _ := strconv.Atoi(os.Getenv("INSTANCE"))
+        bindaddr := dns.GenerateIP(uint32(instance)).String()
+        log.Debug("BINDADDR=", bindaddr)
+        os.Setenv("BINDADDR", bindaddr)
 
         // Poll specific values
-        count := c.Int("count")
         interval := c.Int("interval")
         
         debug := c.Bool("D")
@@ -213,7 +178,7 @@ func main() {
             done := make(chan bool, 1)
             
             // Register services.
-            register.Process(passwd, c.StringSlice("register"), count, interval, debug)
+            register.Process(passwd, c.StringSlice("register"), interval, debug)
         
             // Wait for Needed service before registering.
             go require.Process(passwd, c.StringSlice("require"), func() {                
@@ -227,33 +192,49 @@ func main() {
                         proc := exec.Command(cmd, args...)
                         proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-                        port := os.Getenv("PORT")
-                        log.Debug("PORT=", port)
-                        bindaddr := os.Getenv("BINDADDR")
-                        log.Debug("BINDADDR=", bindaddr)
-
                         env := os.Environ()
 
-/* TODO: Force applications to bind to localhost IPs
-                        env = append(env, "FORCE_NET_VERBOSE=999")
-                        env = append(env, "FORCE_NET_LOG='/var/log/bind.log'")
-                        env = append(env, "FORCE_BIND_ADDRESS_V4=" + bindaddr)
-                        env = append(env, "LD_PRELOAD=/usr/local/lib/force_bind.so")
-*/
-                        
                         if port == "*" {
                             env = append(env, "LD_PRELOAD=/usr/local/lib/listener.so")
                         }
 
                         proc.Env = env
                         log.Debug("env=", proc.Env)
-                        proc.Stdout = os.Stdout
-                        proc.Stderr = os.Stderr
-                        err := proc.Start()
+
+                        stream := func (prefix string, out io.Reader) {
+                            scanner := bufio.NewScanner(out)
+                            for scanner.Scan() {
+                                m := scanner.Text()
+                                fmt.Println(prefix, m)
+                            }
+                            
+                        }
+
+                        
+                        stdout, err := proc.StdoutPipe()
+                        if err != nil {
+                            os.Exit(1)
+                        }                        
+                        
+                        go stream("stdout:", stdout)
+                        stderr, err := proc.StderrPipe()
+                        if err != nil {
+                            os.Exit(1)
+                        }                        
+
+                        go stream("stderr:", stderr)
+                        
+                        err = proc.Start()
                         if err != nil {
                             log.Error(err)
                             os.Exit(1)
                         }
+                        
+                        go func(){
+                            proc.Wait()
+                            fmt.Println("Process Terminated")
+                            register.Cleanup()
+                        }()
 
                         restart := make(chan os.Signal, 1)
                         signal.Notify(restart, syscall.SIGUSR1)

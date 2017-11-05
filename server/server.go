@@ -22,6 +22,8 @@ import (
     "github.com/prometheus/common/log"
 )
 
+var rfwds map[string]net.Listener = make(map[string]net.Listener)
+
 type Callback func(*omap.OMap, *utils.Host)
 
 const (
@@ -98,6 +100,9 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 		log.Debug("Unable to listen on address: ", addr)
 		return
 	}
+    
+    //Store in listener map
+    rfwds[addr] = ln
     
     fmt.Println("SSH Server: Remote Port Forward request for ", ln.Addr().String(), 
                 " from ", sshConn.RemoteAddr().String())
@@ -196,6 +201,34 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 
 }
 
+func TCPIPCancelRequest(req *ssh.Request, sshConn ssh.Conn) {
+	t := tcpipForward{}
+	reply := (t.Port == 0) && req.WantReply
+	ssh.Unmarshal(req.Payload, &t)
+	addr := fmt.Sprintf("%s:%d", t.Host, t.Port)
+    
+    ln, ok := rfwds[addr]
+    
+    if ok {
+        if reply { // Client sent port 0. let them know which port is actually being used
+            _, port, err := utils.GetHostPort(ln.Addr())
+            if err != nil {
+                return
+            }
+
+            b := make([]byte, 4)
+            binary.BigEndian.PutUint32(b, uint32(port))
+            t.Port = uint32(port)
+            req.Reply(true, b)
+        } else {
+            req.Reply(true, nil)
+        }
+
+        ln.Close()
+        delete(rfwds, addr)        
+    }
+}
+
 func Listen() (error) {
 
     // Handle Authentication
@@ -222,6 +255,7 @@ func Listen() (error) {
     easyssh.HandleChannel(easyssh.SessionRequest, easyssh.SessionHandler())
 	easyssh.HandleChannel(easyssh.DirectForwardRequest, easyssh.DirectPortForwardHandler())
 	easyssh.HandleRequestFunc(easyssh.RemoteForwardRequest, easyssh.GlobalRequestHandlerFunc(TCPIPForwardRequest))
+	easyssh.HandleRequestFunc(easyssh.CancelRemoteForwardRequest, easyssh.GlobalRequestHandlerFunc(TCPIPCancelRequest))
     
     // Listen & Accept connections
     easyssh.ListenAndServe(":22", config, nil)

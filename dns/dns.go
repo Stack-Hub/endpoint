@@ -28,6 +28,17 @@ func int2ip(nn uint32) net.IP {
 	return ip
 }
 
+/*
+ *  Ganerate IP
+ */
+func GenerateIP(instance uint32) net.IP {
+    IP := net.ParseIP("127.0.0.0")
+    IPint := ip2int(IP)
+    IPint += instance
+    IP = int2ip(IPint)
+    
+    return IP
+}
 
 /*
  *  Parse localhost
@@ -84,11 +95,7 @@ func parseQuery(m *dns.Msg) {
             
             instance := parseLocalhostInstance(q.Name)
             if instance > 0 {
-                IP := net.ParseIP("127.0.0.0")
-                IPint := ip2int(IP)
-                IPint += uint32(instance)
-                IP = int2ip(IPint)
-                log.Println("IP=", IP)
+                IP := GenerateIP(instance)
                 rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, IP.String()))
                 if err == nil {
                     m.Answer = append(m.Answer, rr)
@@ -143,8 +150,10 @@ func Start() {
 	// start server
     server := &dns.Server{Addr: net.JoinHostPort("127.0.0.1", "53"), Net: "udp"}
 	log.Println("Starting at ", server.Addr)
-    err = server.ListenAndServe()
-	if err != nil {
-		log.Printf("Failed to start server: %s\n ", err.Error())
-	}
+    go func() {
+        err = server.ListenAndServe()
+        if err != nil {
+            log.Printf("Failed to start server: %s\n ", err.Error())
+        }        
+    }()
 }
