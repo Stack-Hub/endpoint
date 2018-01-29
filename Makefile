@@ -31,10 +31,10 @@ all: trafficrouter
 bindata: package
 	go-bindata -o release/${OS}/${ARCH}/src/${BINARY}.go --prefix "release/${OS}/${ARCH}/" -pkg trafficrouter release/${OS}/${ARCH}/${BINARY}.tgz
 
-
 trafficrouter: main.go 
 	go build -o release/${OS}/${ARCH}/bin/${BINARY} main.go  
 	chmod u+s release/${OS}/${ARCH}/bin/${BINARY}
+	sudo chown 0:0 release/${OS}/${ARCH}/bin/${BINARY}
 
 go-deps:
 	go get .

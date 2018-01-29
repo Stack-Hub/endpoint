@@ -120,7 +120,7 @@ func forEach(opts []string, cb parsecb) error {
 
         if r.lport == 0 {
             r.user = r.lhost
-        } else {            
+        } else {
             r.user = r.lhost + "." + fmt.Sprint(r.lport)
         }
 
@@ -134,7 +134,7 @@ func forEach(opts []string, cb parsecb) error {
         if cb != nil {
             if err := cb(&r); err != nil {
                 return err
-            }            
+            }
         }
     }
     return nil
@@ -219,7 +219,7 @@ func (r Reg) connect(passwd string, debug bool) error {
                             break
                         }
                     }
-                }                
+                }
             }
 
             // Skip if remote IP is one of local interface ip
@@ -236,8 +236,8 @@ func (r Reg) connect(passwd string, debug bool) error {
                 if err != nil {
                     return err
                 }
-            }            
-        }        
+            }
+        }
     }
 
     return nil
@@ -323,17 +323,20 @@ func Process(passwd string, opts []string, interval int, debug bool) {
         if e != nil {
             log.Error("listen error:", e)
         }
-        go http.Serve(l, nil)    
+        go http.Serve(l, nil)
         rpcRegistered = true
     }
 
     // Start event loop for each option
-    forEach(opts, func(r *Reg) error {        
+    forEach(opts, func(r *Reg) error {
         if r.lport != 0 {
             if err := r.Connect(passwd, interval, debug); err != nil{
                 log.Error(err)
             }
         }
         return nil
-    })              
+    })
 }
+
+
+

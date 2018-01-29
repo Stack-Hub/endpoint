@@ -126,10 +126,11 @@ func TCPIPForwardRequest(req *ssh.Request, sshConn ssh.Conn) {
 
     u := userDB[sshConn.User()]
     h := &utils.Host{}
-    h.ListenPort = t.Port
-    h.RemoteIP = t.Host
+    h.LocalIP = t.Host
+    h.LocalPort = t.Port
+    tcpAddr, _ := sshConn.RemoteAddr().(*net.TCPAddr)
+    h.RemoteIP = tcpAddr.IP.String()
     h.RemotePort = t.Port
-    h.Config.Port = t.Port
 
     go u.ccb(u.m, h)    
     

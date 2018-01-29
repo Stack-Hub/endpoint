@@ -82,7 +82,7 @@ func close(fd C.int) int32 {
 
     sock, err := syscall.Getsockname(int(fd))
     if (err != nil) {
-        return realclose(fd)        
+        return realclose(fd)
     }
     
     switch sock.(type) {
@@ -96,7 +96,7 @@ func close(fd C.int) int32 {
                     if err != nil {
                         log.Println("dialing:", err)
                         return 107
-                    }            
+                    }
                 }
 
                 pid := os.Getpid()
@@ -106,7 +106,7 @@ func close(fd C.int) int32 {
                                            Rport: port,}
                     var errno int
                     client.Call("RPC.Disconnect", args, &errno)
-                    delete(ports, port)                    
+                    delete(ports, port)
                 }
             }
     }

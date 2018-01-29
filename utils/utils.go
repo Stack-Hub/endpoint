@@ -19,25 +19,13 @@ import (
 
 
 /*
- *  Config Struct is passed from client to server
- */
-type Config struct {
-    Port     uint32 `json:"port"`
-    Instance uint32 `json:"instance"`
-    Label    string `json:"label"`
-}
-
-/*
  *  Host Struct is passed from forceCmd to server
  */
 type Host struct {
-    ListenPort  uint32 `json:"lisport"` // Localhost listening port of reverse tunnel
+    LocalIP     string `json:"laddr"`   // Remote IP 
+    LocalPort   uint32 `json:"lport"` // Localhost listening port of reverse tunnel
     RemoteIP    string `json:"raddr"`   // Remote IP 
     RemotePort  uint32 `json:"rport"`   // Port on which remote host connected
-    Config      Config `json:"config"`  // Remote Config 
-    Uid         int    `json:"uid"`     // User ID
-    Uname       string `json:"uname"`   // Username
-    Pid         int    `json:"pid"`     // Reverse tunnel process ID
 }
 
 
@@ -143,15 +131,13 @@ func GetIP(iface string) (*net.IPAddr) {
 /*
  * Execute on-connect code
  */
-func OnConnect(rhost string, rport string, lhost string, lport string, instance string, label string) {
+func OnConnect(rhost string, rport string, lhost string, lport string) {
     if _, err := os.Stat("/var/lib/dupper/onconnect"); !os.IsNotExist(err) {
         cmd := "bash"
         args := []string{"/var/lib/dupper/onconnect",}
 
         c := exec.Command(cmd, args...)
         env := os.Environ()
-        env = append(env, fmt.Sprintf("INSTANCE=%s", instance))
-        env = append(env, fmt.Sprintf("LABEL=%s", label))
         env = append(env, fmt.Sprintf("REMOTEHOST=%s", rhost))
         env = append(env, fmt.Sprintf("REMOTEPORT=%s", rport))
         env = append(env, fmt.Sprintf("LOCALHOST=%s", lhost))
@@ -163,21 +149,19 @@ func OnConnect(rhost string, rport string, lhost string, lport string, instance 
         if err != nil {
             log.Error(err)
         }
-    }        
+    }
 }
 
 /*
  * Execute on-disconnect code
  */
-func OnDisconnect(rhost string, rport string, lhost string, lport string, instance string, label string) {
+func OnDisconnect(rhost string, rport string, lhost string, lport string) {
     if _, err := os.Stat("/var/lib/dupper/ondisconnect"); !os.IsNotExist(err) {
         cmd := "bash"
         args := []string{"/var/lib/dupper/ondisconnect",}
 
         c := exec.Command(cmd, args...)
         env := os.Environ()
-        env = append(env, fmt.Sprintf("INSTANCE=%s", instance))
-        env = append(env, fmt.Sprintf("LABEL=%s", label))
         env = append(env, fmt.Sprintf("REMOTEHOST=%s", rhost))
         env = append(env, fmt.Sprintf("REMOTEPORT=%s", rport))
         env = append(env, fmt.Sprintf("LOCALHOST=%s", lhost))
