@@ -1,4 +1,4 @@
-BINARY=trafficrouter
+BINARY=endpoint
 UNAME_S=$(shell uname -s | tr [:upper:] [:lower:])
 UNAME_M=$(shell uname -m)
 GOOS ?= $(UNAME_S)
@@ -26,12 +26,12 @@ ifeq ($(GOOS),darwin)
   OS=Darwin
 endif
 
-all: trafficrouter
+all: endpoint
 
 bindata: package
-	go-bindata -o release/${OS}/${ARCH}/src/${BINARY}.go --prefix "release/${OS}/${ARCH}/" -pkg trafficrouter release/${OS}/${ARCH}/${BINARY}.tgz
+	go-bindata -o release/${OS}/${ARCH}/src/${BINARY}.go --prefix "release/${OS}/${ARCH}/" -pkg endpoint release/${OS}/${ARCH}/${BINARY}.tgz
 
-trafficrouter: main.go 
+endpoint: main.go 
 	go build -o release/${OS}/${ARCH}/bin/${BINARY} main.go  
 	chmod u+s release/${OS}/${ARCH}/bin/${BINARY}
 	sudo chown 0:0 release/${OS}/${ARCH}/bin/${BINARY}
@@ -48,7 +48,7 @@ uninstall:
 clean:
 	rm -rf release
 
-package: trafficrouter
+package: endpoint
 	cd release/${OS}/${ARCH} && tar -czvf ${BINARY}.tgz -T ../../../release_files.txt
 
 upload: package
@@ -56,7 +56,3 @@ upload: package
 
 release: package
 	aws --region us-west-1 s3 cp release/${OS}/${ARCH}/${VERSION}/${BINARY}.tgz s3://get.dupper.co/${BINARY}/release/${OS}/${ARCH}/${VERSION}/${BINARY}.tgz --acl public-read
-
-publish:
-	sed -i.bak "s/VERSION=.*/VERSION=${VERSION}/g" install.sh
-	aws --region us-west-1 s3 cp --acl public-read --content-type 'text/plain' ./install.sh s3://get.dupper.co/${BINARY}/index 

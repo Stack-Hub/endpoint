@@ -1,2 +1,2 @@
-bin/trafficrouter
+bin/endpoint
 lib/listener.so

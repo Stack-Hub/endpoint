@@ -13,9 +13,9 @@ import (
     "errors"
     "encoding/json"
     
-    "github.com/duppercloud/trafficrouter/omap"
-    "github.com/duppercloud/trafficrouter/server"
-    "github.com/duppercloud/trafficrouter/utils"
+    "github.com/pipecloud/endpoint/omap"
+    "github.com/pipecloud/endpoint/server"
+    "github.com/pipecloud/endpoint/utils"
     "github.com/prometheus/common/log"
 )
 

@@ -15,8 +15,8 @@ import (
     "net/http"
     "strconv"
     
-    "github.com/duppercloud/trafficrouter/utils"
-    "github.com/duppercloud/trafficrouter/client"
+    "github.com/pipecloud/endpoint/utils"
+    "github.com/pipecloud/endpoint/client"
     "github.com/prometheus/common/log"
     "github.com/bogdanovich/dns_resolver"
     netstat "github.com/shirou/gopsutil/net"

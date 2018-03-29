@@ -15,11 +15,11 @@ import (
     "bufio"
     "fmt"
     
-    "github.com/duppercloud/trafficrouter/utils"
-    "github.com/duppercloud/trafficrouter/dns"
-    "github.com/duppercloud/trafficrouter/opt/require"
-    "github.com/duppercloud/trafficrouter/opt/register"
-    "github.com/duppercloud/trafficrouter/version"
+    "github.com/pipecloud/endpoint/utils"
+    "github.com/pipecloud/endpoint/dns"
+    "github.com/pipecloud/endpoint/opt/require"
+    "github.com/pipecloud/endpoint/opt/register"
+    "github.com/pipecloud/endpoint/version"
     "github.com/prometheus/common/log"
     "github.com/urfave/cli"
 )
@@ -107,7 +107,7 @@ func main() {
 
     
     app := cli.NewApp()
-	app.Name = "trafficrouter"
+	app.Name = "endpoint"
 	app.Version = version.FullVersion()
 	app.Author = "@athakwani"
 	app.Email = "athakwani@gmail.com"

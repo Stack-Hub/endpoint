@@ -15,7 +15,7 @@ import (
     "runtime"
     "time"
     
-    "github.com/duppercloud/trafficrouter/user"
+    "github.com/pipecloud/endpoint/user"
 )
 
 const (

@@ -12,7 +12,7 @@ import (
     "net/rpc"
     "os"
     
-    "github.com/duppercloud/trafficrouter/opt/register"
+    "github.com/pipecloud/endpoint/opt/register"
     "github.com/rainycape/dl"
 )
 

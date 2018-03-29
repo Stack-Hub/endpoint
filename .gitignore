@@ -1,7 +1,7 @@
 .gut
 .gutignore
 release
-trafficrouter
+endpoint
 .DS_Store
 install.sh.bak
 Example usecase

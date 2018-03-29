@@ -12,7 +12,7 @@ import (
     "os"
 
 	"golang.org/x/crypto/ssh"
-    "github.com/duppercloud/trafficrouter/utils"
+    "github.com/pipecloud/endpoint/utils"
     "github.com/prometheus/common/log"
 )
 
