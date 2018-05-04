@@ -6,6 +6,4 @@ endpoint
 install.sh.bak
 Example usecase
 listener/listener.h
-listener/listener.so
 rfwd/rfwd.h
-rfwd/rfwd.so
