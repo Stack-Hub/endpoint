@@ -49,6 +49,7 @@ clean:
 	rm -rf release
 
 package: endpoint
+	mkdir -p release/${OS}/${ARCH}/lib && cp listener/listener.so release/${OS}/${ARCH}/lib/
 	cd release/${OS}/${ARCH} && tar -czvf ${BINARY}.tgz -T ../../../release_files.txt
 
 upload: package
