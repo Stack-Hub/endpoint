@@ -7,7 +7,7 @@ import (
     "net/rpc"
     "os"
     
-    "github.com/pipecloud/endpoint/opt/register"
+    "github.com/microstacks/stack/endpoint/opt/register"
     "github.com/rainycape/dl"
 )
 

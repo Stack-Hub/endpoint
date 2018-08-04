@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
     "dev.justinjudd.org/justin/easyssh"
-    "github.com/pipecloud/endpoint/omap"
-    "github.com/pipecloud/endpoint/utils"
+    "github.com/microstacks/stack/endpoint/omap"
+    "github.com/microstacks/stack/endpoint/utils"
     "github.com/prometheus/common/log"
 )
 

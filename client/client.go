@@ -7,7 +7,7 @@ import (
     "os"
 
 	"golang.org/x/crypto/ssh"
-    "github.com/pipecloud/endpoint/utils"
+    "github.com/microstacks/stack/endpoint/utils"
     "github.com/prometheus/common/log"
 )
 

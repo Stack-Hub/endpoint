@@ -10,7 +10,7 @@ import (
     "runtime"
     "time"
     
-    "github.com/pipecloud/endpoint/user"
+    "github.com/microstacks/stack/endpoint/user"
 )
 
 const (
